@@ -13,7 +13,7 @@ def test_get_weather(location: str):
 
 async def main():
     mars = MarsAgent(
-        model_config=MarsModelConfig(model="qwen3-coder-plus", api_key="sk-fc40dd0604f04142a0730793ec74585f", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        model_config=MarsModelConfig(model="qwen3-coder-plus", api_key="sk-************", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
         functions = [test_get_weather],
         mcp_configs=[
             MCPConfig(
