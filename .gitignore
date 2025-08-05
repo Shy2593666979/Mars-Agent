@@ -1,0 +1,11 @@
+__pycache__/
+
+.idea/
+
+.vscode/
+
+chat.html
+
+.env
+
+chroma_db/
