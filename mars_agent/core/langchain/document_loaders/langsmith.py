@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Iterator, Sequence
 from typing import Any, Callable, Optional, Union
 
-from langsmith import Client as LangSmithClient
+from mars_agent.core.langsmith import Client as LangSmithClient
 from typing_extensions import override
 
 from mars_agent.core.langchain.document_loaders.base import BaseLoader

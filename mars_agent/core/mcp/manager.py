@@ -73,7 +73,6 @@ class MCPManager:
         except Exception as err:
             result = {}
             logger.info(f"获取MCP 服务工具列表出错: {err}")
-        finally:
             await self.multi_server_client.aclose()
         return result
 

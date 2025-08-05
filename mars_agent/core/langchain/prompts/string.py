@@ -9,7 +9,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, create_model
 
-import langchain_core.utils.mustache as mustache
+import mars_agent.core.langchain.utils.mustache as mustache
 from mars_agent.core.langchain.prompt_values import PromptValue, StringPromptValue
 from mars_agent.core.langchain.prompts.base import BasePromptTemplate
 from mars_agent.core.langchain.utils import get_colored_text

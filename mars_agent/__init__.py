@@ -1,1 +1,3 @@
-from mars_agent.core.models import MarsModelConfig, BaseMarsModel
+from mars_agent.types import MarsModelConfig, MCPConfig
+from mars_agent.agent import MarsAgent
+

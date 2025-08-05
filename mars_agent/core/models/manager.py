@@ -1,4 +1,4 @@
-from mars_agent.core.models.base_model import MarsModelConfig
+from mars_agent.types import MarsModelConfig
 from mars_agent.core.models.conversation_model import ConversationModel
 from mars_agent.core.models.tool_call_model import ToolCallModel
 

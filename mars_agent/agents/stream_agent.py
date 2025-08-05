@@ -9,23 +9,35 @@ from mars_agent.core.langchain.messages import BaseMessage, AIMessage, SystemMes
 from mars_agent.core.langchain.tools import BaseTool, Tool
 from mars_agent.core.langgraph.graph import MessagesState, StateGraph, END, START
 
-from mars_agent.core.models.base_model import BaseMarsModel, MarsModelConfig
+from mars_agent.types import MarsModelConfig
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.prompts.chat_prompt import DEFAULT_CALL_PROMPT
 from mars_agent.core.mcp.manager import MCPManager
-from mars_agent.schema import MCPConfig
+from mars_agent.types import MCPConfig
 from mars_agent.utils.util import convert_langchain_tool_calls, function_to_args_schema, mcp_tool_to_args_schema
+from mars_agent.utils.event_manager import EventManager, EventType
 
 logger = logging.getLogger(__name__)
 
 class StreamingAgent:
+    """
+    Stream 副代理 - 负责插件和MCP工具执行
+    
+    职责:
+    - 工具调用和执行
+    - 事件上报给主代理
+    - 不负责模型回复（由主代理处理）
+    - 正确的资源生命周期管理
+    """
+    
     def __init__(self,
                  model_config: MarsModelConfig,
                  tool_call_model_config: MarsModelConfig,
                  mcp_configs: List[MCPConfig] = [],
-                 functions: List = []):
+                 functions: List = [],
+                 event_queue: asyncio.Queue = None):
 
-        self.conversation_model = MarsModelManager.get_conversation_model(model_config)
+        # 副代理只需要工具调用模型，不需要对话模型
         self.tool_invocation_model = MarsModelManager.get_tool_call_model(tool_call_model_config)
         self.plugin_tools = []
         self.mcp_tools = []
@@ -35,8 +47,9 @@ class StreamingAgent:
         self.mcp_manager = MCPManager()
         self.functions = functions
 
-        # 流式事件队列
-        self.event_queue = asyncio.Queue()
+        # 使用主代理的事件队列，事件自动上报给主代理
+        self.event_queue = event_queue
+        self.event_manager = EventManager(self.event_queue) if self.event_queue else EventManager()
         self.step_counter_lock = asyncio.Lock()
         self.step_counter = 1
 
@@ -45,65 +58,99 @@ class StreamingAgent:
 
         # 根据server name找user config
         self.server_dict: dict[str, Any] = {}
+        
+        # 初始化状态管理
+        self._initialized = False
 
 
     async def emit_event(self, data: Dict[Any, Any]):
-        """发送流式事件"""
-        event = {
-            "type": "event",
-            "timestamp": time.time(),
-            "data": data
-        }
-        await self.event_queue.put(event)
+        """副代理事件发送 - 自动上报给主代理"""
+        await self.event_manager.emit_event(
+            self.event_manager.create_event(EventType.EVENT, data)
+        )
 
     async def init_agent(self):
-        await self.set_agent_graph()
-        await self.init_mcp_tools()
-        await self.init_plugin_tools()
+        """初始化副代理 - 带资源管理"""
+        try:
+            if self._initialized:
+                logger.info("Stream Agent already initialized")
+                return
+                
+            await self.set_agent_graph()
+            await self.init_mcp_tools()
+            await self.init_plugin_tools()
 
-        self.tools = self.plugin_tools + self.mcp_tools
+            self.tools = self.plugin_tools + self.mcp_tools
+            self._initialized = True
+            logger.info("Stream Agent initialized successfully")
+            
+        except Exception as err:
+            logger.error(f"Failed to initialize Stream Agent: {err}")
+            await self.aclose()  # 初始化失败时清理资源
+            raise
 
     async def init_mcp_tools(self):
-        # 与MCP Server建立链接
-        servers_info = []
-        for mcp_config in self.mcp_configs:
-            servers_info.append({
-                "url": mcp_config.url,
-                "type": mcp_config.type,
-                "server_name": mcp_config.server_name
-            })
-        await self.mcp_manager.connect_mcp_servers(servers_info)
-
-        self.mcp_tools = await self.mcp_manager.get_mcp_tools()
-
-        mcp_servers_info = await self.mcp_manager.show_mcp_tools()
-        self.server_dict = {server_name: [tool.name for tool in tools_info] for server_name, tools_info in mcp_servers_info.items()}
+        """初始化MCP工具 - 带错误处理"""
+        if not self.mcp_configs:
+            self.mcp_tools = []
+            return
+            
+        try:
+            # 与MCP Server建立链接
+            servers_info = []
+            for mcp_config in self.mcp_configs:
+                servers_info.append({
+                    "url": mcp_config.url,
+                    "type": mcp_config.type,
+                    "server_name": mcp_config.server_name
+                })
+            
+            if servers_info:
+                await self.mcp_manager.connect_mcp_servers(servers_info)
+                self.mcp_tools = await self.mcp_manager.get_mcp_tools()
+                
+                mcp_servers_info = await self.mcp_manager.show_mcp_tools()
+                self.server_dict = {server_name: [tool["name"] for tool in tools_info] for server_name, tools_info in mcp_servers_info.items()}
+                
+                logger.info(f"Loaded {len(self.mcp_tools)} MCP tools from {len(servers_info)} servers")
+            else:
+                self.mcp_tools = []
+                
+        except Exception as err:
+            logger.error(f"Failed to initialize MCP tools: {err}")
+            self.mcp_tools = []
 
     async def init_plugin_tools(self):
+        """初始化插件工具 - 带错误处理"""
         self.plugin_tools = []
 
         # 无意义函数，但是Tool需要一个func
         def _t():
             pass
 
-        for func in self.functions:
-            if asyncio.iscoroutine(func):
-                self.plugin_tools.append(Tool(name=func.__name__, description=func.__doc__, func=_t, coroutine=func))
-            else:
-                self.plugin_tools.append(Tool(name=func.__name__, description=func.__doc__, func=func))
-
-
+        try:
+            for func in self.functions:
+                if asyncio.iscoroutine(func):
+                    self.plugin_tools.append(Tool(name=func.__name__, description=func.__doc__, func=_t, coroutine=func))
+                else:
+                    self.plugin_tools.append(Tool(name=func.__name__, description=func.__doc__, func=func))
+            
+            logger.info(f"Loaded {len(self.plugin_tools)} plugin tools")
+            
+        except Exception as err:
+            logger.error(f"Failed to initialize plugin tools: {err}")
+            self.plugin_tools = []
 
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
-        """调用工具选择，添加流式事件"""
+        """工具选择 - 副代理负责工具调用决策"""
 
         select_tool_message = "开始选择可用工具" if self.step_counter == 1 else f"是否需要继续调用工具{' ' * self.step_counter}"
-        # 发送工具分析开始事件
-        await self.emit_event({
-            "title": select_tool_message,
-            "status": "START",
-            "message": "正在分析需要使用的工具...",
-        })
+        # 发送工具分析开始事件到主代理
+        await self.event_manager.emit_progress(
+            select_tool_message,
+            "正在分析需要使用的工具...",
+            "START"
+        )
 
         call_tool_messages: List[BaseMessage] = []
         # 只有第一次调用工具的时候才会初始化
@@ -130,28 +177,28 @@ class StreamingAgent:
             response.tool_calls = convert_langchain_tool_calls(response.tool_calls)
 
             tool_call_names = [tool_call["name"] for tool_call in response.tool_calls]
-            # 发送工具选择完成事件
-            await self.emit_event({
-                "title": select_tool_message,
-                "status": "END",
-                "message": "可用工具：" + ", ".join(set(tool_call_names))
-            })
+            # 发送工具选择完成事件到主代理
+            await self.event_manager.emit_progress(
+                select_tool_message,
+                "可用工具：" + ", ".join(set(tool_call_names)),
+                "END"
+            )
 
             return AIMessage(
                 content=response.content,
                 tool_calls=response.tool_calls,
             )
         else:
-            # 发送无工具可用事件
-            await self.emit_event({
-                "title": select_tool_message,
-                "status": "END",
-                "message": "没有命中可用的工具"
-            })
+            # 发送无工具可用事件到主代理
+            await self.event_manager.emit_progress(
+                select_tool_message,
+                "没有命中可用的工具",
+                "END"
+            )
             return AIMessage(content="没有命中可用的工具")
 
     async def execute_tool_message(self, messages: List[ToolMessage]):
-        """执行工具，添加流式事件"""
+        """工具执行 - 副代理负责具体工具执行"""
         tool_calls = messages[-1].tool_calls
         tool_messages: List[BaseMessage] = []
 
@@ -172,34 +219,39 @@ class StreamingAgent:
 
                     tool_args.update(mcp_config)
 
-                    # 发送MCP工具调用事件
-                    await self.emit_event({
-                        "status": "START",
-                        "title": f"Run MCP Tool: {tool_name}",
-                        "message": f"正在调用MCP工具 {tool_name}..."
-                    })
+                    # 发送MCP工具调用事件到主代理
+                    await self.event_manager.emit_progress(
+                        f"Run MCP Tool: {tool_name}",
+                        f"正在调用MCP工具 {tool_name}...",
+                        "START"
+                    )
 
                     # 调用MCP 工具返回结果
                     tool_result = await use_tool.coroutine(**tool_args)
 
-                    # 发送MCP工具执行完成事件
-                    await self.emit_event({
-                        "status": "END",
-                        "title": f"Run MCP Tool: {tool_name}",
-                        "message": tool_result,
-                    })
+                    # 发送MCP工具执行完成事件到主代理
+                    await self.event_manager.emit_progress(
+                        f"Run MCP Tool: {tool_name}",
+                        tool_result,
+                        "END"
+                    )
 
                     tool_messages.append(
                         ToolMessage(content=tool_result, name=tool_name + "_mcp", tool_call_id=tool_call_id))
                     logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {tool_result}")
 
                 except Exception as err:
-                    # 发送MCP工具执行错误事件
-                    await self.emit_event({
-                        "status": "ERROR",
-                        "message": str(err),
-                        "title": f"Run MCP Tool: {tool_name}",
-                    })
+                    # 发送MCP工具执行错误事件到主代理
+                    await self.event_manager.emit_event(
+                        self.event_manager.create_event(
+                            EventType.ERROR,
+                            {
+                                "title": f"Run MCP Tool: {tool_name}",
+                                "message": str(err),
+                                "status": "ERROR"
+                            }
+                        )
+                    )
 
                     logger.error(f"MCP Tool {tool_name} Error: {str(err)}")
                     tool_messages.append(
@@ -211,12 +263,12 @@ class StreamingAgent:
                     suffix = " " * self.tool_call_count.get(tool_name, 0)
                     self.tool_call_count[tool_name] = self.tool_call_count.get(tool_name, 0) + 1
 
-                    # 发送插件工具调用事件
-                    await self.emit_event({
-                        "status": "START",
-                        "title": f"执行可用工具: {tool_name}{suffix}",
-                        "message": f"正在调用插件工具 {tool_name}..."
-                    })
+                    # 发送插件工具调用事件到主代理
+                    await self.event_manager.emit_progress(
+                        f"执行可用工具: {tool_name}{suffix}",
+                        f"正在调用插件工具 {tool_name}...",
+                        "START"
+                    )
 
                     if use_tool.coroutine:
                         tool_result = await use_tool.coroutine(**tool_args)
@@ -224,24 +276,29 @@ class StreamingAgent:
                         # 改为异步
                         tool_result = await asyncio.to_thread(use_tool.func, **tool_args)
 
-                    # 发送插件工具执行完成事件
-                    await self.emit_event({
-                        "status": "END",
-                        "title": f"执行可用工具: {tool_name}{suffix}",
-                        "message": tool_result,
-                    })
+                    # 发送插件工具执行完成事件到主代理
+                    await self.event_manager.emit_progress(
+                        f"执行可用工具: {tool_name}{suffix}",
+                        tool_result,
+                        "END"
+                    )
 
                     tool_messages.append(
                         ToolMessage(content=tool_result, name=tool_name, tool_call_id=tool_call_id))
                     logger.info(f"Plugin Tool {tool_name}, Args: {tool_args}, Result: {tool_result}")
 
                 except Exception as err:
-                    # 发送插件工具执行错误事件
-                    await self.emit_event({
-                        "status": "ERROR",
-                        "title": f"执行可用工具: {tool_name}{suffix}",
-                        "message": str(err),
-                    })
+                    # 发送插件工具执行错误事件到主代理
+                    await self.event_manager.emit_event(
+                        self.event_manager.create_event(
+                            EventType.ERROR,
+                            {
+                                "title": f"执行可用工具: {tool_name}{suffix}",
+                                "message": str(err),
+                                "status": "ERROR"
+                            }
+                        )
+                    )
 
                     logger.error(f"Plugin Tool {tool_name} Error: {str(err)}")
                     tool_messages.append(
@@ -251,7 +308,7 @@ class StreamingAgent:
 
 
     async def set_agent_graph(self):
-        """设置Agent图，添加流式事件支持"""
+        """设置副代理的工具执行图"""
 
         # 构建调用工具Graph
         async def should_continue(state: MessagesState):
@@ -299,90 +356,60 @@ class StreamingAgent:
 
         self.graph = workflow.compile()
 
-    async def ainvoke_streaming(self, messages: List[BaseMessage]) -> AsyncGenerator[Dict[str, Any], None]:
-        """流式调用主方法"""
-
-        # 启动图执行
-        graph_task = None
-        if self.tools and len(self.tools) != 0:
-            graph_task = asyncio.create_task(self.graph.ainvoke({"messages": messages}))
-
-        # 收集所有任务
-        all_tasks = [task for task in [graph_task] if task is not None]
-
-        # 流式返回事件
-        conversation_ended = False
-
-        while not conversation_ended:
-            try:
-                # 等待事件或超时
-                event = await asyncio.wait_for(self.event_queue.get(), timeout=5.0)
-                yield event
-
-            except asyncio.TimeoutError:
-                # 发送心跳事件
-                yield {
-                    "type": "heartbeat",
-                    "timestamp": time.time(),
-                    "data": {"message": "连接保持中..."}
-                }
-
-            # 检查任务执行是否完成
-            if all(task.done() for task in all_tasks):
-                conversation_ended = True
-
-
-        # 等待图执行完成
-        if graph_task and graph_task.done():
-            results = graph_task.result()
-            messages = results["messages"][:-1]  # 去除没有命中工具的message
-
-        response_content = ""
+    async def ainvoke(self, messages: List[BaseMessage]):
+        """副代理的工具执行 - 只返回工具执行结果，不进行模型回复"""
+        if not self._initialized:
+            logger.warning("Stream Agent not initialized")
+            return []
+            
+        # 发送副代理开始工作事件
+        await self.event_manager.emit_progress(
+            "Stream副代理",
+            "开始执行工具调用...",
+            "START"
+        )
+        
         try:
-            async for chunk in self.conversation_model.astream(messages):
-                response_content += chunk.content
-                yield {
-                    "type": "response_chunk",
-                    "timestamp": time.time(),
-                    "data": {
-                        "chunk": chunk.content,
-                        "accumulated": response_content
-                    }
-                }
-        # 针对模型回复进行兜底操作，错误类型包括：敏感词，模型问题
+            graph_task = None
+            if self.tools and len(self.tools) != 0:
+                graph_task = asyncio.create_task(self.graph.ainvoke({"messages": messages}))
+
+            # 等待工具执行完成
+            if graph_task:
+                results = await graph_task
+                messages = results["messages"][:-1]  # 去除没有命中工具的message
+                
+                # 发送副代理完成工作事件
+                tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
+                await self.event_manager.emit_progress(
+                    "Stream副代理",
+                    f"工具执行完成，共执行{tool_count}个工具",
+                    "END"
+                )
+                
+                return messages
+            else:
+                # 发送无工具执行事件
+                await self.event_manager.emit_progress(
+                    "Stream副代理",
+                    "无工具需要执行",
+                    "END"
+                )
+                return []
+                
         except Exception as err:
-            logger.error(f"LLM Model Error: {err}")
-            yield {
-                "type": "response_chunk",
-                "timestamp": time.time(),
-                "data": {
-                    "chunk": "您的问题触及到我的知识盲区，请换个问题吧✨",
-                    "accumulated": response_content
-                }
-            }
-
-    # 非流式版本（保持向后兼容）
-    async def ainvoke(self, messages: List[BaseMessage], event_queue):
-        """非流式版本（保持向后兼容）"""
-        self.event_queue = event_queue
-        graph_task = None
-        if self.tools and len(self.tools) != 0:
-            graph_task = asyncio.create_task(self.graph.ainvoke({"messages": messages}))
-
-        # 等待所有任务完成
-        if graph_task:
-            results = await graph_task
-            messages = results["messages"][:-1]  # 去除没有命中工具的message
-        else:
-            messages = messages.copy()
-
-        return messages
-        # # 收集完整响应
-        # response_content = ""
-        # async for chunk in self.conversation_model.astream(messages):
-        #     response_content += chunk.content
-        #
-        # return response_content
+            logger.error(f"Stream Agent execution failed: {err}")
+            await self.event_manager.emit_event(
+                self.event_manager.create_event(
+                    EventType.ERROR,
+                    {
+                        "title": "Stream副代理",
+                        "message": f"执行失败: {str(err)}",
+                        "status": "ERROR"
+                    }
+                )
+            )
+            return []
 
     # 新增辅助方法
     def find_tool_use(self, tool_name: str):
@@ -405,3 +432,18 @@ class StreamingAgent:
                     if server_name == config.server_name:
                         return config.user_config
         return {}
+
+    async def aclose(self):
+        """关闭Stream代理和清理资源"""
+        try:
+            if self.mcp_manager:
+                await self.mcp_manager.aclose()
+                logger.info("Stream Agent resources cleaned up")
+        except Exception as err:
+            logger.error(f"Error closing Stream Agent: {err}")
+        finally:
+            self._initialized = False
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """异步上下文管理器出口"""
+        await self.aclose()

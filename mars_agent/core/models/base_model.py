@@ -10,11 +10,7 @@ from openai.types.chat.chat_completion_message_tool_call import Function
 from pydantic import BaseModel, Field
 
 
-class MarsModelConfig(BaseModel):
-    model: str = Field(..., description="模型的名称")
-    base_url: str = Field(..., description="模型配置")
-    api_key: str = Field(..., description="模型密钥")
-    temperature: float = Field(default=0.6, description="模型的温度值")
+
 
 class BaseMarsModel:
     def __init__(self, base_url: str, api_key: str):

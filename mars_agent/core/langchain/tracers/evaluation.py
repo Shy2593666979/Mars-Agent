@@ -9,8 +9,8 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from uuid import UUID
 
-import langsmith
-from langsmith.evaluation.evaluator import EvaluationResult, EvaluationResults
+import mars_agent.core.langsmith
+from mars_agent.core.langsmith.evaluation.evaluator import EvaluationResult, EvaluationResults
 
 from mars_agent.core.langchain.tracers import langchain as langchain_tracer
 from mars_agent.core.langchain.tracers.base import BaseTracer

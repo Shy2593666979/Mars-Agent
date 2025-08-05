@@ -14,8 +14,8 @@ from typing import (
 )
 from uuid import UUID
 
-from langsmith import run_helpers as ls_rh
-from langsmith import utils as ls_utils
+from mars_agent.core.langsmith import run_helpers as ls_rh
+from mars_agent.core.langsmith import utils as ls_utils
 
 from mars_agent.core.langchain.tracers.langchain import LangChainTracer
 from mars_agent.core.langchain.tracers.run_collector import RunCollectorCallbackHandler
@@ -23,7 +23,7 @@ from mars_agent.core.langchain.tracers.run_collector import RunCollectorCallback
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from langsmith import Client as LangSmithClient
+    from mars_agent.core.langsmith import Client as LangSmithClient
 
     from mars_agent.core.langchain.callbacks.base import BaseCallbackHandler, Callbacks
     from mars_agent.core.langchain.callbacks.manager import AsyncCallbackManager, CallbackManager

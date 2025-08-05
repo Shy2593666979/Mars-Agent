@@ -147,7 +147,7 @@ def _set_config_context(
         )
         and (run := tracer.run_map.get(str(parent_run_id)))
     ):
-        from langsmith.run_helpers import _set_tracing_context, get_tracing_context
+        from mars_agent.core.langsmith.run_helpers import _set_tracing_context, get_tracing_context
 
         current_context = get_tracing_context()
         _set_tracing_context({"parent": run})
@@ -161,7 +161,7 @@ def set_config_context(config: RunnableConfig) -> Generator[Context, None, None]
     Args:
         config (RunnableConfig): The config to set.
     """
-    from langsmith.run_helpers import _set_tracing_context
+    from mars_agent.core.langsmith.run_helpers import _set_tracing_context
 
     ctx = copy_context()
     config_token, _ = ctx.run(_set_config_context, config)

@@ -7,8 +7,8 @@ import warnings
 from typing import Any, Optional
 from uuid import UUID
 
-from langsmith import RunTree
-from langsmith.schemas import RunTypeEnum as RunTypeEnumDep
+from mars_agent.core.langsmith import RunTree
+from mars_agent.core.langsmith.schemas import RunTypeEnum as RunTypeEnumDep
 from pydantic import PydanticDeprecationWarning
 from pydantic.v1 import BaseModel as BaseModelV1
 from pydantic.v1 import Field as FieldV1

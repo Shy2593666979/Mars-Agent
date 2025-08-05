@@ -21,7 +21,7 @@ from typing import (
 )
 from uuid import UUID
 
-from langsmith.run_helpers import get_tracing_context
+from mars_agent.core.langsmith.run_helpers import get_tracing_context
 
 from mars_agent.core.langchain.callbacks.base import (
     BaseCallbackHandler,
