@@ -17,20 +17,12 @@ def read_file(filename):
 
 def read_requirements():
     """读取依赖列表"""
-    requirements = []
-    try:
-        with open('requirements.txt', 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    requirements.append(line)
-    except FileNotFoundError:
-        # 如果没有requirements.txt，使用硬编码的依赖
-        requirements = [
-            "mcp>=1.6.0",
-            "openai>=1.12.0",
-            "langgraph>=0.3.0",
-        ]
+    # 直接使用硬编码的依赖列表，避免编码问题
+    requirements = [
+        "mcp>=1.6.0",
+        "openai>=1.12.0", 
+        "langgraph>=0.3.0",
+    ]
     return requirements
 
 
@@ -38,7 +30,7 @@ setup(
     name="mars-agent",
     version="0.1.0",
     author="MingGuang Tian",
-    author_email="your-email@example.com",
+    author_email="2593666979@qq.com",
     description="Mars Agent - 基于主副代理架构的AI代理系统，支持MCP协议和流式处理",
     long_description=read_file("README.md"),
     long_description_content_type="text/markdown",
