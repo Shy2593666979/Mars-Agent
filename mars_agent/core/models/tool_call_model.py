@@ -1,7 +1,7 @@
 import json
 from typing import List, Dict, Any, Union
 
-from mars_agent.core.langchain.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
+from langchain_core.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
     SystemMessage, ToolCall
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall

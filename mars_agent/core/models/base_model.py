@@ -3,7 +3,7 @@ from openai import AsyncOpenAI, OpenAI
 import json
 from typing import List, Dict, Any, Union
 
-from mars_agent.core.langchain.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
+from langchain_core.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
     SystemMessage, ToolCall
 from openai.types.chat import ChatCompletionMessageToolCall
 from openai.types.chat.chat_completion_message_tool_call import Function

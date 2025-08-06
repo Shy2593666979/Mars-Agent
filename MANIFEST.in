@@ -1,0 +1,23 @@
+# 包含所有必要的文件
+include README.md
+include LICENSE
+include requirements.txt
+include pyproject.toml
+
+# 递归包含mars_agent目录下的所有文件
+recursive-include mars_agent *.py
+recursive-include mars_agent *.md
+recursive-include mars_agent *.txt
+recursive-include mars_agent *.json
+recursive-include mars_agent *.yaml
+recursive-include mars_agent *.yml
+
+# 排除不需要的文件
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude *.egg-info
+global-exclude build
+global-exclude dist 

@@ -4,13 +4,13 @@ import logging
 from typing import List, Callable, Union, Any, Dict
 from collections.abc import Awaitable
 from uuid import uuid4
-from mars_agent.core.langchain.messages import BaseMessage, ToolMessage, HumanMessage
+from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage
 
-from mars_agent.types import MarsModelConfig
+from mars_agent.schema import MarsModelConfig
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.agents.mcp_agent import MCPAgent
 from mars_agent.agents.stream_agent import StreamingAgent
-from mars_agent.types import MCPConfig
+from mars_agent.schema import MCPBaseConfig
 from mars_agent.utils.event_manager import EventManager, EventType
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class MarsAgent:
                  mcp_as_agent: bool = True,
                  enable_memory: bool = False,
                  enable_mcp_concurrency: bool = True,
-                 mcp_configs: List[MCPConfig] = []):
+                 mcp_configs: List[MCPBaseConfig] = []):
 
         self.mcp_agents: List[MCPAgent] = []
         self.mcp_configs = mcp_configs
@@ -62,6 +62,8 @@ class MarsAgent:
         self.stream_agent = None
         self.conversation_model = None
 
+        self.init_mars_agent()
+
 
     async def emit_event(self, data: Dict[Any, Any]):
         """主代理的事件发送方法 - 统一事件格式"""
@@ -70,7 +72,7 @@ class MarsAgent:
         )
 
 
-    async def init_mars_agent(self):
+    def init_mars_agent(self):
         """初始化主代理和所有副代理 - 带资源管理"""
         try:
             if self._initialized:
@@ -79,11 +81,9 @@ class MarsAgent:
                 
             if self.mcp_as_agent:
                 self.init_mcp_agents()
-                # 修复：在主代理初始化时就建立MCP连接
-                await self.init_mcp_connections()
-                await self.init_stream_agent()
+                self.init_stream_agent()
             else:
-                await self.init_stream_agent()
+                self.init_stream_agent()
 
             if isinstance(self.model_config, dict):
                 self.model_config = MarsModelConfig(**self.model_config)
@@ -98,7 +98,6 @@ class MarsAgent:
             
         except Exception as err:
             logger.error(f"Failed to initialize Mars Agent: {err}")
-            await self.aclose()  # 初始化失败时清理资源
             raise
 
     def init_mcp_agents(self):
@@ -112,23 +111,23 @@ class MarsAgent:
                                  self.event_queue)  # 副代理使用主代理的事件队列
             self.mcp_agents.append(mcp_agent)
 
-    # 新增：在主代理的生命周期内统一初始化所有MCP连接
-    async def init_mcp_connections(self):
-        """为所有MCP副代理初始化连接"""
-        if self.enable_mcp_concurrency:
-            init_tasks = [agent.init_mcp_agent() for agent in self.mcp_agents]
-            results = await asyncio.gather(*init_tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Failed to initialize an MCP agent: {result}")
-        else:
-            for agent in self.mcp_agents:
-                try:
-                    await agent.init_mcp_agent()
-                except Exception as e:
-                    logger.error(f"Failed to initialize an MCP agent: {e}")
+    # # 新增：在主代理的生命周期内统一初始化所有MCP连接
+    # async def init_mcp_connections(self):
+    #     """为所有MCP副代理初始化连接"""
+    #     if self.enable_mcp_concurrency:
+    #         init_tasks = [agent.init_mcp_agent() for agent in self.mcp_agents]
+    #         results = await asyncio.gather(*init_tasks, return_exceptions=True)
+    #         for result in results:
+    #             if isinstance(result, Exception):
+    #                 logger.error(f"Failed to initialize an MCP agent: {result}")
+    #     else:
+    #         for agent in self.mcp_agents:
+    #             try:
+    #                 await agent.init_mcp_agent()
+    #             except Exception as e:
+    #                 logger.error(f"Failed to initialize an MCP agent: {e}")
 
-    async def init_stream_agent(self):
+    def init_stream_agent(self):
         """初始化Stream副代理，传入主代理的事件队列"""
         try:
             if self.mcp_as_agent:
@@ -142,7 +141,6 @@ class MarsAgent:
                                                    functions=self.functions,
                                                    mcp_configs=self.mcp_configs,
                                                    event_queue=self.event_queue)  # 副代理使用主代理的事件队列
-            await self.stream_agent.init_agent()
             
         except Exception as err:
             logger.error(f"Failed to initialize Stream Agent: {err}")
@@ -197,7 +195,7 @@ class MarsAgent:
     async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
         """主代理的非流式调用 - 统一处理副代理结果和模型回复"""
         if not self._initialized:
-            await self.init_mars_agent()
+            self.init_mars_agent()
             
         if isinstance(messages, str):
             messages = [HumanMessage(content=messages)]
@@ -242,8 +240,8 @@ class MarsAgent:
 
     async def astream(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
         """主代理的流式调用 - 统一处理事件流和模型回复"""
-        if not self._initialized:
-            await self.init_mars_agent()
+        # if not self._initialized:
+        #     await self.init_mars_agent()
             
         if isinstance(messages, str):
             messages = [HumanMessage(content=messages)]
@@ -288,10 +286,11 @@ class MarsAgent:
             )
             
             async for chunk in self.conversation_model.astream(messages):
-                response_content += chunk.content
-                # 主代理统一处理响应块事件
-                yield self.event_manager.create_response_chunk_event(chunk.content, response_content)
-                
+                if chunk.content:
+                    response_content += chunk.content
+                    # 主代理统一处理响应块事件
+                    yield self.event_manager.create_response_chunk_event(chunk.content, response_content)
+
             # 发送模型回复完成事件
             await self.event_manager.emit_progress(
                 "模型回复",
@@ -327,38 +326,6 @@ class MarsAgent:
         """同步流式接口（待实现）"""
         pass
 
-    async def aclose(self):
-        """关闭主代理和清理所有资源"""
-        try:
-            # 关闭所有MCP副代理
-            for mcp_agent in self.mcp_agents:
-                try:
-                    await mcp_agent.aclose()
-                except Exception as err:
-                    logger.error(f"Error closing MCP agent: {err}")
-            
-            # 关闭Stream副代理
-            if self.stream_agent:
-                try:
-                    await self.stream_agent.aclose()
-                except Exception as err:
-                    logger.error(f"Error closing Stream agent: {err}")
-            
-            logger.info("Mars Agent and all sub-agents resources cleaned up")
-            
-        except Exception as err:
-            logger.error(f"Error closing Mars Agent: {err}")
-        finally:
-            self._initialized = False
-
-    async def __aenter__(self):
-        """异步上下文管理器入口"""
-        await self.init_mars_agent()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口"""
-        await self.aclose()
 
 if __name__ == "__main__":
     pass

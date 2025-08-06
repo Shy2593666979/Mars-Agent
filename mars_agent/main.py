@@ -1,7 +1,7 @@
 import asyncio
 
-from mars_agent.agent import MarsAgent, MCPConfig
-from mars_agent.types import MarsModelConfig
+from mars_agent.agent import MarsAgent
+from mars_agent.schema import MarsModelConfig, MCPSSEConfig, MCPStdioConfig
 
 
 def test_get_weather(location: str):
@@ -12,21 +12,22 @@ def test_get_weather(location: str):
 
 
 async def main():
-    mars = MarsAgent(
-        model_config=MarsModelConfig(model="qwen3-coder-plus", api_key="sk-************", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
-        functions = [test_get_weather],
-        mcp_configs=[
-            MCPConfig(
-                server_name="高德地图",
-                url="https://mcp.api-inference.modelscope.net/77df8a09751e4c/sse",
-                type="sse",
-                user_config={}
-            )
-        ],
-        mcp_as_agent=False
+    print("-" * 50)
 
+    mars = MarsAgent(
+        model_config=MarsModelConfig(model="qwen3-coder-plus", api_key="sk-*****************", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        functions = [test_get_weather],
+        # mcp_configs=[
+        #     MCPSSEConfig(
+        #         server_name="高德地图",
+        #         url="https://mcp.api-inference.modelscope.net/77df8a09751e4c/sse",
+        #     )
+        # ],
+        mcp_as_agent=False
     )
-    await mars.init_mars_agent()
+    print("*" * 50)
+
+    print("=" * 50)
     async for chunk in mars.astream("你好啊, 今天北京的天气如何呢？"):
         print(chunk)
 

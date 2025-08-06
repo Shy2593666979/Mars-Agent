@@ -1,6 +1,6 @@
 from typing import List
 
-from mars_agent.core.langchain.messages import BaseMessage
+from langchain_core.messages import BaseMessage
 from openai.types.chat import ChatCompletionMessage
 
 from mars_agent.core.models.base_model import BaseMarsModel

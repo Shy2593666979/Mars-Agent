@@ -5,20 +5,22 @@ import time
 import logging
 from typing import List, Dict, Any
 
-from mars_agent.core.langchain.messages import ToolMessage, BaseMessage, AIMessage, SystemMessage, ToolCall, HumanMessage
-from mars_agent.core.langchain.tools import BaseTool
-from mars_agent.core.langgraph.constants import START, END
-from mars_agent.core.langgraph.graph import StateGraph, MessagesState
+from langchain_core.messages import ToolMessage, BaseMessage, AIMessage, SystemMessage, ToolCall, HumanMessage
+from langchain_core.tools import BaseTool
+from langgraph.constants import START, END
+from langgraph.graph import StateGraph, MessagesState
 
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.prompts.chat_prompt import DEFAULT_CALL_PROMPT
 from mars_agent.core.mcp.manager import MCPManager
-from mars_agent.types import MarsModelConfig
-from mars_agent.types import MCPConfig
+from mars_agent.schema import MarsModelConfig
+from mars_agent.schema import MCPBaseConfig
 from mars_agent.utils.util import mcp_tool_to_args_schema, convert_langchain_tool_calls
 from mars_agent.utils.event_manager import EventManager, EventType
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MAX_STEP = 5
 
 class MCPAgent:
     """
@@ -32,12 +34,13 @@ class MCPAgent:
     """
     
     def __init__(self,
-                 mcp_config: MCPConfig,
+                 mcp_config: MCPBaseConfig,
                  model_config: MarsModelConfig,
                  tool_call_model_config: MarsModelConfig,
                  event_queue: asyncio.Queue = None):
+
         self.mcp_config = mcp_config
-        self.mcp_manager = MCPManager()
+        self.mcp_manager = MCPManager([mcp_config])
         self.event_queue = event_queue
 
         # 使用主代理的事件队列，事件自动上报给主代理
@@ -63,9 +66,8 @@ class MCPAgent:
             if self._initialized:
                 logger.info(f"MCP Agent {self.mcp_config.server_name} already initialized")
                 return
-                
+
             if self.mcp_config:
-                await self.connect_mcp_server()
                 self.mcp_tools = await self.set_mcp_tools()
 
             await self.set_agent_graph()
@@ -74,7 +76,6 @@ class MCPAgent:
             
         except Exception as err:
             logger.error(f"Failed to initialize MCP Agent {self.mcp_config.server_name}: {err}")
-            await self.aclose()  # 初始化失败时清理资源
             raise
 
     async def set_mcp_tools(self):
@@ -85,19 +86,6 @@ class MCPAgent:
         except Exception as err:
             logger.error(f"Failed to get MCP tools: {err}")
             return []
-
-    async def connect_mcp_server(self):
-        """连接MCP服务器 - 带错误处理"""
-        try:
-            server_info = {
-                "url": self.mcp_config.url,
-                "type": self.mcp_config.type,
-                "server_name": self.mcp_config.server_name
-            }
-            await self.mcp_manager.connect_mcp_servers([server_info])
-        except Exception as err:
-            logger.error(f"Failed to connect MCP server {self.mcp_config.server_name}: {err}")
-            raise
 
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
         """MCP工具选择 - 副代理负责MCP工具调用决策"""
@@ -165,7 +153,8 @@ class MCPAgent:
             tool_call_id = tool_call["id"]
             try:
                 # 针对鉴权的MCP Server需要用户的单独配置，例如飞书、邮箱
-                tool_args.update(self.mcp_config.user_config)
+                if self.mcp_config.personal_config:
+                    tool_args.update(self.mcp_config.personal_config)
 
                 # 发送MCP工具执行开始事件到主代理
                 await self.event_manager.emit_progress(
@@ -215,8 +204,8 @@ class MCPAgent:
             messages = state["messages"]
             last_message = messages[-1]
 
-            # 如果工具递归调用次数超过5次，直接返回END
-            if self.step_counter > self.mcp_config.max_step:
+            # 如果工具递归调用次数超过DEFAULT_MAX_STEP次，直接返回END
+            if self.step_counter > DEFAULT_MAX_STEP:
                 return END
 
             if last_message.tool_calls:
@@ -256,9 +245,8 @@ class MCPAgent:
     async def ainvoke(self, messages: List[BaseMessage]) -> List[BaseMessage]:
         """MCP副代理的工具执行 - 只返回MCP工具执行结果，不进行模型回复"""
         if not self._initialized:
-            logger.warning(f"MCP Agent {self.mcp_config.server_name} not initialized")
-            return []
-            
+            await self.init_mcp_agent()
+
         # 发送MCP副代理开始工作事件
         await self.event_manager.emit_progress(
             f"MCP副代理: {self.mcp_config.server_name}",
@@ -304,25 +292,6 @@ class MCPAgent:
                 return tool
         return None
 
-    async def aclose(self):
-        """关闭MCP代理和清理资源"""
-        try:
-            if self.mcp_manager:
-                await self.mcp_manager.aclose()
-                logger.info(f"MCP Agent {self.mcp_config.server_name} resources cleaned up")
-        except Exception as err:
-            logger.error(f"Error closing MCP Agent {self.mcp_config.server_name}: {err}")
-        finally:
-            self._initialized = False
-
-    async def __aenter__(self):
-        """异步上下文管理器入口"""
-        await self.init_mcp_agent()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口"""
-        await self.aclose()
 
 
 

@@ -1,67 +1,40 @@
 import asyncio
 import logging
-from mars_agent.core.langchain.tools import BaseTool
+from typing import List
+
+from langchain_core.tools import BaseTool
 from mars_agent.core.mcp.multi_client import MultiServerMCPClient
+from mars_agent.schema import MCPBaseConfig
 
 logger = logging.getLogger(__name__)
 
+HIDE_FIELDS = ["server_name", "personal_config"]
+
 class MCPManager:
-    def __init__(self, timeout=10):
-        self.multi_server_client = MultiServerMCPClient()
+    def __init__(self, mcp_configs: List[MCPBaseConfig], timeout=10):
+
+        connection_info = {
+            mcp_config.server_name: mcp_config.model_dump(exclude={"server_name", "personal_config"})
+            for mcp_config in mcp_configs
+        }
+
+        self.multi_server_client = MultiServerMCPClient(connection_info)
+        self.mcp_configs = mcp_configs
 
         self.timeout = timeout
 
-    async def connect_mcp_servers(self, mcp_servers: list):
-        # 如果出现连接不上的mcp server 直接略过
-        is_all_not_connect = True
-        for server in mcp_servers:
-            try:
-                if server["type"] == "sse":
-                    await self.multi_server_client.connect_to_sse_server(server["server_name"], url=server["url"], timeout=self.timeout)
-                elif server["type"] == "websocket":
-                    await self.multi_server_client.connect_to_websocket_server(server["server_name"], url=server["url"], timeout=self.timeout)
-                else:
-                    # TODO: 添加stdio方式
-                    pass
-                is_all_not_connect = False
-            except Exception as err:
-                logger.info(f"Connect mcp servers {server['server_name']} Error: {err}")
-        if is_all_not_connect:
-            await self.multi_server_client.aclose()
-
-    # async def connect_sse_servers(self, mcp_servers: list):
-    #     try:
-    #         for server in mcp_servers:
-    #             await self.multi_server_client.connect_to_sse_server(server["server_name"], url=server["url"], timeout=self.timeout)
-    #     except Exception as err:
-    #         logger.info(f"Connect sse servers Error: {err}")
-    #         await self.multi_server_client.aclose()
-    #
-    # async def connect_stdio_servers(self, mcp_servers: list):
-    #     pass
-    #
-    # async def connect_websocket_servers(self, mcp_servers: list):
-    #     try:
-    #         for server in mcp_servers:
-    #             await self.multi_server_client.connect_to_websocket_server(server["server_name"], url=server["url"])
-    #     except Exception as err:
-    #         logger.info(f"Connect websocket servers Error: {err}")
-    #         await self.multi_server_client.aclose()
 
     async def get_mcp_tools(self) -> list[BaseTool]:
-        mcp_tools = self.multi_server_client.get_tools()
-        return mcp_tools
+        tools = await self.multi_server_client.get_tools()
+        return tools
 
     async def show_mcp_tools(self) -> dict:
+        result = {}
         try:
-            server_name_tools = await self.multi_server_client.show_tools()
-            result = {}
-            for key, tools in server_name_tools.items():
+            for mcp_config in self.mcp_configs:
+                server_tools = await self.multi_server_client.get_tools(server_name=mcp_config.server_name)
                 tool_list = []
-                for tool in tools:
-                    # TODO: 基于LangChain的Tool Sdk修改，提取schema交给frontend
-                    # args_schema = tool.args_schema.model_json_schema()
-                    # input_schema = args_schema["properties"]["input_schema"]["default"]
+                for tool in server_tools:
                     input_schema = tool.args_schema
                     tool_dict = {
                         'name': tool.name,
@@ -69,19 +42,18 @@ class MCPManager:
                         'input_schema': input_schema
                     }
                     tool_list.append(tool_dict)
-                result[key] = tool_list
+                result[mcp_config.server_name] = tool_list
         except Exception as err:
-            result = {}
             logger.info(f"获取MCP 服务工具列表出错: {err}")
-            await self.multi_server_client.aclose()
         return result
+
 
     async def call_mcp_tools(self, mcp_tools_args, is_concurrent=True):
         tool_results = []
         callable_tools = {}
         try:
             # 获取工具列表
-            mcp_tools = self.multi_server_client.get_tools()
+            mcp_tools = await self.multi_server_client.get_tools()
             for tool in mcp_tools:
                 callable_tools[tool.name] = tool
             # 异步并发
@@ -114,6 +86,4 @@ class MCPManager:
 
         except Exception as err:
             logger.error(f"调用工具发生错误：{err}")
-        finally:
-            await self.multi_server_client.aclose()
         return tool_results

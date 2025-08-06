@@ -4,16 +4,17 @@ import json
 import time
 import inspect
 import logging
-from typing import List, Dict, Any, AsyncGenerator
-from mars_agent.core.langchain.messages import BaseMessage, AIMessage, SystemMessage, ToolMessage, HumanMessage, ToolCall
-from mars_agent.core.langchain.tools import BaseTool, Tool
-from mars_agent.core.langgraph.graph import MessagesState, StateGraph, END, START
+from typing import List, Dict, Any, Callable, Union
+from langchain_core.messages import BaseMessage, AIMessage, SystemMessage, ToolMessage, HumanMessage, ToolCall
+from langchain_core.tools import BaseTool, Tool
+from langgraph.graph import MessagesState, StateGraph, END, START
+from collections.abc import Awaitable
 
-from mars_agent.types import MarsModelConfig
+from mars_agent.schema import MarsModelConfig
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.prompts.chat_prompt import DEFAULT_CALL_PROMPT
 from mars_agent.core.mcp.manager import MCPManager
-from mars_agent.types import MCPConfig
+from mars_agent.schema import MCPBaseConfig
 from mars_agent.utils.util import convert_langchain_tool_calls, function_to_args_schema, mcp_tool_to_args_schema
 from mars_agent.utils.event_manager import EventManager, EventType
 
@@ -33,8 +34,8 @@ class StreamingAgent:
     def __init__(self,
                  model_config: MarsModelConfig,
                  tool_call_model_config: MarsModelConfig,
-                 mcp_configs: List[MCPConfig] = [],
-                 functions: List = [],
+                 mcp_configs: List[MCPBaseConfig] = [],
+                 functions: List[Union[Callable[..., str], Callable[..., Awaitable[str]]]] = [],
                  event_queue: asyncio.Queue = None):
 
         # 副代理只需要工具调用模型，不需要对话模型
@@ -44,7 +45,7 @@ class StreamingAgent:
         self.graph = None
         self.mcp_configs = mcp_configs
         self.tools = []
-        self.mcp_manager = MCPManager()
+        self.mcp_manager = MCPManager(mcp_configs)
         self.functions = functions
 
         # 使用主代理的事件队列，事件自动上报给主代理
@@ -69,7 +70,7 @@ class StreamingAgent:
             self.event_manager.create_event(EventType.EVENT, data)
         )
 
-    async def init_agent(self):
+    async def init_stream_agent(self):
         """初始化副代理 - 带资源管理"""
         try:
             if self._initialized:
@@ -86,7 +87,6 @@ class StreamingAgent:
             
         except Exception as err:
             logger.error(f"Failed to initialize Stream Agent: {err}")
-            await self.aclose()  # 初始化失败时清理资源
             raise
 
     async def init_mcp_tools(self):
@@ -97,24 +97,12 @@ class StreamingAgent:
             
         try:
             # 与MCP Server建立链接
-            servers_info = []
-            for mcp_config in self.mcp_configs:
-                servers_info.append({
-                    "url": mcp_config.url,
-                    "type": mcp_config.type,
-                    "server_name": mcp_config.server_name
-                })
-            
-            if servers_info:
-                await self.mcp_manager.connect_mcp_servers(servers_info)
-                self.mcp_tools = await self.mcp_manager.get_mcp_tools()
-                
-                mcp_servers_info = await self.mcp_manager.show_mcp_tools()
-                self.server_dict = {server_name: [tool["name"] for tool in tools_info] for server_name, tools_info in mcp_servers_info.items()}
-                
-                logger.info(f"Loaded {len(self.mcp_tools)} MCP tools from {len(servers_info)} servers")
-            else:
-                self.mcp_tools = []
+            self.mcp_tools = await self.mcp_manager.get_mcp_tools()
+
+            mcp_servers_info = await self.mcp_manager.show_mcp_tools()
+            self.server_dict = {server_name: [tool["name"] for tool in tools_info] for server_name, tools_info in mcp_servers_info.items()}
+
+            logger.info(f"Loaded {len(self.mcp_tools)} MCP tools from MCP servers")
                 
         except Exception as err:
             logger.error(f"Failed to initialize MCP tools: {err}")
@@ -130,7 +118,7 @@ class StreamingAgent:
 
         try:
             for func in self.functions:
-                if asyncio.iscoroutine(func):
+                if asyncio.iscoroutinefunction(func):
                     self.plugin_tools.append(Tool(name=func.__name__, description=func.__doc__, func=_t, coroutine=func))
                 else:
                     self.plugin_tools.append(Tool(name=func.__name__, description=func.__doc__, func=func))
@@ -160,7 +148,10 @@ class StreamingAgent:
                 if isinstance(tool, BaseTool) and tool.args_schema:  # MCP Tool
                     tools_schema.append(mcp_tool_to_args_schema(tool.name, tool.description, tool.args_schema))
                 else:
-                    tools_schema.append(function_to_args_schema(tool.func))
+                    if hasattr(tool, "coroutine") and tool.coroutine is not None:
+                        tools_schema.append(function_to_args_schema(tool.coroutine))
+                    else:
+                        tools_schema.append(function_to_args_schema(tool.func))
 
             self.tool_invocation_model.bind_tools(tools_schema)
 
@@ -215,9 +206,9 @@ class StreamingAgent:
 
             if is_mcp_tool:
                 try:
-                    mcp_config = self.get_mcp_config_by_tool(tool_name)
-
-                    tool_args.update(mcp_config)
+                    personal_config = self.get_mcp_config_by_tool(tool_name)
+                    if personal_config:
+                        tool_args.update(personal_config)
 
                     # 发送MCP工具调用事件到主代理
                     await self.event_manager.emit_progress(
@@ -270,7 +261,7 @@ class StreamingAgent:
                         "START"
                     )
 
-                    if use_tool.coroutine:
+                    if hasattr(use_tool, "coroutine") and use_tool.coroutine is not None:
                         tool_result = await use_tool.coroutine(**tool_args)
                     else:
                         # 改为异步
@@ -359,8 +350,7 @@ class StreamingAgent:
     async def ainvoke(self, messages: List[BaseMessage]):
         """副代理的工具执行 - 只返回工具执行结果，不进行模型回复"""
         if not self._initialized:
-            logger.warning("Stream Agent not initialized")
-            return []
+            await self.init_stream_agent()
             
         # 发送副代理开始工作事件
         await self.event_manager.emit_progress(
@@ -386,7 +376,9 @@ class StreamingAgent:
                     f"工具执行完成，共执行{tool_count}个工具",
                     "END"
                 )
-                
+
+                messages = [msg for msg in messages if isinstance(msg, ToolMessage) or (isinstance(msg, AIMessage) and msg.tool_calls)]
+
                 return messages
             else:
                 # 发送无工具执行事件
@@ -430,20 +422,5 @@ class StreamingAgent:
             if tool_name in tools:
                 for config in self.mcp_configs:
                     if server_name == config.server_name:
-                        return config.user_config
+                        return config.personal_config
         return {}
-
-    async def aclose(self):
-        """关闭Stream代理和清理资源"""
-        try:
-            if self.mcp_manager:
-                await self.mcp_manager.aclose()
-                logger.info("Stream Agent resources cleaned up")
-        except Exception as err:
-            logger.error(f"Error closing Stream Agent: {err}")
-        finally:
-            self._initialized = False
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口"""
-        await self.aclose()

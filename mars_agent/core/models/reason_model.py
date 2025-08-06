@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Union
 
-from mars_agent.core.langchain.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
+from langchain_core.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
     SystemMessage, ToolCall
 
 from mars_agent.core.models.base_model import BaseMarsModel
