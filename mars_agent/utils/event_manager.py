@@ -154,7 +154,8 @@ class EventManager:
         title: str, 
         message: str, 
         status: str, 
-        progress: Optional[int] = None
+        progress: Optional[int] = None,
+        agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         创建进度事件
@@ -164,17 +165,21 @@ class EventManager:
             message (str): 进度消息
             status (str): 状态（START/END/PROGRESS）
             progress (Optional[int]): 进度百分比
+            agent (Optional[str]): 代理名称，表示消息来源
             
         Returns:
             Dict[str, Any]: 进度事件字典
         """
         data = {
+            "agent": agent,
             "title": title,
             "message": message,
             "status": status
         }
         if progress is not None:
             data["progress"] = progress
+        # if agent is not None:
+        #     data["agent"] = agent
             
         return {
             "type": EventType.PROGRESS.value,
@@ -223,7 +228,8 @@ class EventManager:
         title: str, 
         message: str, 
         status: str, 
-        progress: Optional[int] = None
+        progress: Optional[int] = None,
+        agent: Optional[str] = None
     ) -> None:
         """
         发送进度事件
@@ -233,8 +239,9 @@ class EventManager:
             message (str): 进度消息
             status (str): 状态（START/END/PROGRESS）
             progress (Optional[int]): 进度百分比
+            agent (Optional[str]): 代理名称，表示消息来源
         """
-        event = self.create_progress_event(title, message, status, progress)
+        event = self.create_progress_event(title, message, status, progress, agent)
         await self.emit_event(event)
     
     async def stream_with_heartbeat(

@@ -113,22 +113,6 @@ class MarsAgent:
                                  self.event_queue)  # 副代理使用主代理的事件队列
             self.mcp_agents.append(mcp_agent)
 
-    # # 新增：在主代理的生命周期内统一初始化所有MCP连接
-    # async def init_mcp_connections(self):
-    #     """为所有MCP Agent初始化连接"""
-    #     if self.enable_mcp_concurrency:
-    #         init_tasks = [agent.init_mcp_agent() for agent in self.mcp_agents]
-    #         results = await asyncio.gather(*init_tasks, return_exceptions=True)
-    #         for result in results:
-    #             if isinstance(result, Exception):
-    #                 logger.error(f"Failed to initialize an MCP agent: {result}")
-    #     else:
-    #         for agent in self.mcp_agents:
-    #             try:
-    #                 await agent.init_mcp_agent()
-    #             except Exception as e:
-    #                 logger.error(f"Failed to initialize an MCP agent: {e}")
-
     def init_stream_agent(self):
         """初始化Stream Agent，传入主代理的事件队列"""
         try:
@@ -286,7 +270,8 @@ class MarsAgent:
             await self.event_manager.emit_progress(
                 "模型回复",
                 "正在生成回复...",
-                "START"
+                "START",
+                agent="Mars Agent"
             )
             
             async for chunk in self.conversation_model.astream(messages):
@@ -299,7 +284,8 @@ class MarsAgent:
             await self.event_manager.emit_progress(
                 "模型回复",
                 "回复生成完成",
-                "END"
+                "END",
+                agent="Mars Agent"
             )
             
         # 主代理统一处理错误

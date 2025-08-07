@@ -137,7 +137,8 @@ class StreamingAgent:
         await self.event_manager.emit_progress(
             select_tool_message,
             "正在分析需要使用的工具...",
-            "START"
+            "START",
+            agent="Stream Agent"
         )
 
         call_tool_messages: List[BaseMessage] = []
@@ -172,7 +173,8 @@ class StreamingAgent:
             await self.event_manager.emit_progress(
                 select_tool_message,
                 "可用工具：" + ", ".join(set(tool_call_names)),
-                "END"
+                "END",
+                agent="Stream Agent"
             )
 
             return AIMessage(
@@ -184,7 +186,8 @@ class StreamingAgent:
             await self.event_manager.emit_progress(
                 select_tool_message,
                 "没有命中可用的工具",
-                "END"
+                "END",
+                agent="Stream Agent"
             )
             return AIMessage(content="没有命中可用的工具")
 
@@ -214,22 +217,24 @@ class StreamingAgent:
                     await self.event_manager.emit_progress(
                         f"Run MCP Tool: {tool_name}",
                         f"正在调用MCP工具 {tool_name}...",
-                        "START"
+                        "START",
+                        agent="Stream Agent"
                     )
 
-                    # 调用MCP 工具返回结果
-                    tool_result = await use_tool.coroutine(**tool_args)
+                    # 调用MCP 工具返回全部结果，但是目前仅处理文本数据
+                    text_content, no_text_content = await use_tool.coroutine(**tool_args)
 
                     # 发送MCP工具执行完成事件到主代理
                     await self.event_manager.emit_progress(
                         f"Run MCP Tool: {tool_name}",
-                        tool_result,
-                        "END"
+                        text_content,
+                        "END",
+                        agent="Stream Agent"
                     )
 
                     tool_messages.append(
-                        ToolMessage(content=tool_result, name=tool_name + "_mcp", tool_call_id=tool_call_id))
-                    logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {tool_result}")
+                        ToolMessage(content=text_content, name=tool_name + "_mcp", tool_call_id=tool_call_id))
+                    logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {text_content}")
 
                 except Exception as err:
                     # 发送MCP工具执行错误事件到主代理
@@ -258,7 +263,8 @@ class StreamingAgent:
                     await self.event_manager.emit_progress(
                         f"执行可用工具: {tool_name}{suffix}",
                         f"正在调用插件工具 {tool_name}...",
-                        "START"
+                        "START",
+                        agent="Stream Agent"
                     )
 
                     if hasattr(use_tool, "coroutine") and use_tool.coroutine is not None:
@@ -271,7 +277,8 @@ class StreamingAgent:
                     await self.event_manager.emit_progress(
                         f"执行可用工具: {tool_name}{suffix}",
                         tool_result,
-                        "END"
+                        "END",
+                        agent="Stream Agent"
                     )
 
                     tool_messages.append(
@@ -356,7 +363,8 @@ class StreamingAgent:
         await self.event_manager.emit_progress(
             "Stream Agent",
             "开始执行工具调用...",
-            "START"
+            "START",
+            agent="Stream Agent"
         )
         
         try:
@@ -374,7 +382,8 @@ class StreamingAgent:
                 await self.event_manager.emit_progress(
                     "Stream Agent",
                     f"工具执行完成，共执行{tool_count}个工具",
-                    "END"
+                    "END",
+                    agent="Stream Agent"
                 )
 
                 messages = [msg for msg in messages if isinstance(msg, ToolMessage) or (isinstance(msg, AIMessage) and msg.tool_calls)]
@@ -385,7 +394,8 @@ class StreamingAgent:
                 await self.event_manager.emit_progress(
                     "Stream Agent",
                     "无工具需要执行",
-                    "END"
+                    "END",
+                    agent="Stream Agent"
                 )
                 return []
                 

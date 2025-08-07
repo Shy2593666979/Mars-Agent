@@ -97,7 +97,8 @@ class MCPAgent:
         await self.event_manager.emit_progress(
             select_tool_message,
             f"正在分析{self.mcp_config.server_name}下需要使用的工具...",
-            "START"
+            "START",
+            agent=f"{self.mcp_config.server_name} | MCP Agent"
         )
 
         # 只有第一次调用工具的时候才会初始化
@@ -126,7 +127,8 @@ class MCPAgent:
             await self.event_manager.emit_progress(
                 select_tool_message,
                 f"{self.mcp_config.server_name}下可用工具：" + ", ".join(set(tool_call_names)),
-                "END"
+                "END",
+                agent=f"{self.mcp_config.server_name} | MCP Agent"
             )
 
             return AIMessage(
@@ -134,6 +136,13 @@ class MCPAgent:
                 tool_calls=response.tool_calls,
             )
         else:
+            await self.event_manager.emit_progress(
+                select_tool_message,
+                "没有命中可用的工具",
+                "END",
+                agent=f"{self.mcp_config.server_name} | MCP Agent"
+            )
+
             # 发送无MCP工具可用事件到主代理
             return AIMessage(content="没有命中可用的工具")
 
@@ -158,24 +167,26 @@ class MCPAgent:
 
                 # 发送MCP工具执行开始事件到主代理
                 await self.event_manager.emit_progress(
-                    f"Run MCP Tool: {tool_name}",
+                    f"执行MCP可用工具: {tool_name}",
                     f"正在调用MCP工具 {tool_name}...",
-                    "START"
+                    "START",
+                    agent=f"{self.mcp_config.server_name} | MCP Agent"
                 )
 
-                # 调用MCP 工具返回结果
-                tool_result = await mcp_tool.coroutine(**tool_args)
+                # 调用MCP 工具返回全部结果，但是目前仅处理文本数据
+                text_content, no_text_content = await mcp_tool.coroutine(**tool_args)
 
                 # 发送MCP工具执行完成事件到主代理
                 await self.event_manager.emit_progress(
-                    f"Run MCP Tool: {tool_name}",
-                    tool_result,
-                    "END"
+                    f"执行MCP可用工具: {tool_name}",
+                    text_content,
+                    "END",
+                    agent=f"{self.mcp_config.server_name} | MCP Agent"
                 )
 
                 tool_messages.append(
-                    ToolMessage(content=tool_result, name=tool_name, tool_call_id=tool_call_id))
-                logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {tool_result}")
+                    ToolMessage(content=text_content, name=tool_name, tool_call_id=tool_call_id))
+                logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {text_content}")
 
             except Exception as err:
                 # 发送MCP工具执行错误事件到主代理
@@ -183,7 +194,7 @@ class MCPAgent:
                     self.event_manager.create_event(
                         EventType.ERROR,
                         {
-                            "title": f"Run MCP Tool: {tool_name}",
+                            "title": f"执行MCP可用工具: {tool_name}",
                             "message": str(err),
                             "status": "ERROR"
                         }
@@ -251,7 +262,8 @@ class MCPAgent:
         await self.event_manager.emit_progress(
             f"{self.mcp_config.server_name} | MCP Agent",
             "开始执行MCP工具调用...",
-            "START"
+            "START",
+            agent=f"{self.mcp_config.server_name} | MCP Agent"
         )
         
         try:
@@ -266,7 +278,8 @@ class MCPAgent:
             await self.event_manager.emit_progress(
                 f"{self.mcp_config.server_name} | MCP Agent",
                 f"MCP工具执行完成，共执行{tool_count}个工具" if tool_count > 0 else "无MCP工具需要执行",
-                "END"
+                "END",
+                agent=f"{self.mcp_config.server_name} | MCP Agent"
             )
             
             return messages
