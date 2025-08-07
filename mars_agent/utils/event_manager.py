@@ -1,12 +1,12 @@
 """
-Mars Agent 事件管理器
+Mars Agent Event Manager
 
-此模块提供统一的事件管理功能，用于标准化项目中的流式事件处理。
+This module provides unified event management functionality for standardizing streaming event processing in the project.
 
 Classes:
-    EventType: 事件类型枚举
-    StreamEvent: 流式事件数据类
-    EventManager: 事件管理器类
+    EventType: Event type enumeration
+    StreamEvent: Streaming event data class
+    EventManager: Event manager class
 """
 
 import time
@@ -19,9 +19,9 @@ from pydantic import BaseModel
 
 class EventType(str, Enum):
     """
-    事件类型枚举
+    Event type enumeration
     
-    定义了系统中支持的所有事件类型。
+    Defines all event types supported by the system.
     """
     HEARTBEAT = "heartbeat"
     RESPONSE_CHUNK = "response_chunk"
@@ -35,12 +35,12 @@ class EventType(str, Enum):
 @dataclass
 class StreamEvent:
     """
-    流式事件数据类
+    Streaming event data class
     
     Attributes:
-        type (EventType): 事件类型
-        timestamp (float): 事件时间戳
-        data (Dict[str, Any]): 事件数据
+        type (EventType): Event type
+        timestamp (float): Event timestamp
+        data (Dict[str, Any]): Event data
     """
     type: EventType
     timestamp: float
@@ -48,10 +48,10 @@ class StreamEvent:
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        将事件转换为字典格式
+        Convert event to dictionary format
         
         Returns:
-            Dict[str, Any]: 事件的字典表示
+            Dict[str, Any]: Dictionary representation of the event
         """
         return {
             "type": self.type.value,
@@ -62,30 +62,30 @@ class StreamEvent:
 
 class EventManager:
     """
-    事件管理器类
+    Event manager class
     
-    提供统一的事件创建、发送和管理功能。
+    Provides unified event creation, sending, and management functionality.
     """
     
     def __init__(self, event_queue: Optional[asyncio.Queue] = None):
         """
-        初始化事件管理器
+        Initialize event manager
         
         Args:
-            event_queue (Optional[asyncio.Queue]): 事件队列，如果未提供则创建新队列
+            event_queue (Optional[asyncio.Queue]): Event queue, create new queue if not provided
         """
         self.event_queue = event_queue or asyncio.Queue()
     
     @staticmethod
-    def create_heartbeat_event(message: str = "连接保持中...") -> Dict[str, Any]:
+    def create_heartbeat_event(message: str = "Connection maintained...") -> Dict[str, Any]:
         """
-        创建心跳事件
+        Create heartbeat event
         
         Args:
-            message (str): 心跳消息
+            message (str): Heartbeat message
             
         Returns:
-            Dict[str, Any]: 心跳事件字典
+            Dict[str, Any]: Heartbeat event dictionary
         """
         return {
             "type": EventType.HEARTBEAT.value,
@@ -100,15 +100,15 @@ class EventManager:
         additional_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        创建响应块事件
+        Create response chunk event
         
         Args:
-            chunk (str): 当前响应块内容
-            accumulated (str): 累积的响应内容
-            additional_data (Optional[Dict[str, Any]]): 额外的数据
+            chunk (str): Current response chunk content
+            accumulated (str): Accumulated response content
+            additional_data (Optional[Dict[str, Any]]): Additional data
             
         Returns:
-            Dict[str, Any]: 响应块事件字典
+            Dict[str, Any]: Response chunk event dictionary
         """
         data = {
             "chunk": chunk,
@@ -130,15 +130,15 @@ class EventManager:
         timestamp: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        创建通用事件
+        Create generic event
         
         Args:
-            event_type (Union[EventType, str]): 事件类型
-            data (Dict[str, Any]): 事件数据
-            timestamp (Optional[float]): 时间戳，如果未提供则使用当前时间
+            event_type (Union[EventType, str]): Event type
+            data (Dict[str, Any]): Event data
+            timestamp (Optional[float]): Timestamp, use current time if not provided
             
         Returns:
-            Dict[str, Any]: 事件字典
+            Dict[str, Any]: Event dictionary
         """
         if isinstance(event_type, EventType):
             event_type = event_type.value
@@ -158,17 +158,17 @@ class EventManager:
         agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        创建进度事件
+        Create progress event
         
         Args:
-            title (str): 进度标题
-            message (str): 进度消息
-            status (str): 状态（START/END/PROGRESS）
-            progress (Optional[int]): 进度百分比
-            agent (Optional[str]): 代理名称，表示消息来源
+            title (str): Progress title
+            message (str): Progress message
+            status (str): Status (START/END/PROGRESS)
+            progress (Optional[int]): Progress percentage
+            agent (Optional[str]): Agent name, indicates message source
             
         Returns:
-            Dict[str, Any]: 进度事件字典
+            Dict[str, Any]: Progress event dictionary
         """
         data = {
             "agent": agent,
@@ -189,19 +189,19 @@ class EventManager:
     
     async def emit_event(self, event_data: Dict[str, Any]) -> None:
         """
-        发送事件到队列
+        Send event to queue
         
         Args:
-            event_data (Dict[str, Any]): 事件数据
+            event_data (Dict[str, Any]): Event data
         """
         await self.event_queue.put(event_data)
     
-    async def emit_heartbeat(self, message: str = "连接保持中...") -> None:
+    async def emit_heartbeat(self, message: str = "Connection maintained...") -> None:
         """
-        发送心跳事件
+        Send heartbeat event
         
         Args:
-            message (str): 心跳消息
+            message (str): Heartbeat message
         """
         event = self.create_heartbeat_event(message)
         await self.emit_event(event)
@@ -213,12 +213,12 @@ class EventManager:
         additional_data: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        发送响应块事件
+        Send response chunk event
         
         Args:
-            chunk (str): 当前响应块内容
-            accumulated (str): 累积的响应内容
-            additional_data (Optional[Dict[str, Any]]): 额外的数据
+            chunk (str): Current response chunk content
+            accumulated (str): Accumulated response content
+            additional_data (Optional[Dict[str, Any]]): Additional data
         """
         event = self.create_response_chunk_event(chunk, accumulated, additional_data)
         await self.emit_event(event)
@@ -232,14 +232,14 @@ class EventManager:
         agent: Optional[str] = None
     ) -> None:
         """
-        发送进度事件
+        Send progress event
         
         Args:
-            title (str): 进度标题
-            message (str): 进度消息
-            status (str): 状态（START/END/PROGRESS）
-            progress (Optional[int]): 进度百分比
-            agent (Optional[str]): 代理名称，表示消息来源
+            title (str): Progress title
+            message (str): Progress message
+            status (str): Status (START/END/PROGRESS)
+            progress (Optional[int]): Progress percentage
+            agent (Optional[str]): Agent name, indicates message source
         """
         event = self.create_progress_event(title, message, status, progress, agent)
         await self.emit_event(event)
@@ -248,24 +248,24 @@ class EventManager:
         self, 
         tasks: list, 
         heartbeat_interval: float = 10.0,
-        heartbeat_message: str = "连接保持中..."
+        heartbeat_message: str = "Connection maintained..."
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        带心跳的流式处理器
+        Streaming processor with heartbeat
         
         Args:
-            tasks (list): 要监控的异步任务列表
-            heartbeat_interval (float): 心跳间隔（秒）
-            heartbeat_message (str): 心跳消息
+            tasks (list): List of async tasks to monitor
+            heartbeat_interval (float): Heartbeat interval (seconds)
+            heartbeat_message (str): Heartbeat message
             
         Yields:
-            Dict[str, Any]: 事件数据
+            Dict[str, Any]: Event data
         """
         conversation_ended = False
         
         while not conversation_ended:
             try:
-                # 等待事件或超时
+                # Wait for event or timeout
                 event = await asyncio.wait_for(
                     self.event_queue.get(), 
                     timeout=heartbeat_interval
@@ -273,24 +273,24 @@ class EventManager:
                 yield event
                 
             except asyncio.TimeoutError:
-                # 发送心跳事件
+                # Send heartbeat event
                 yield self.create_heartbeat_event(heartbeat_message)
             
-            # 检查任务执行是否完成
+            # Check if task execution is completed
             if all(task.done() for task in tasks if task is not None):
                 conversation_ended = True
 
 
-# 全局事件管理器实例
+# Global event manager instance
 _global_event_manager: Optional[EventManager] = None
 
 
 def get_global_event_manager() -> EventManager:
     """
-    获取全局事件管理器实例
+    Get global event manager instance
     
     Returns:
-        EventManager: 全局事件管理器
+        EventManager: Global event manager
     """
     global _global_event_manager
     if _global_event_manager is None:
@@ -300,10 +300,10 @@ def get_global_event_manager() -> EventManager:
 
 def set_global_event_manager(event_manager: EventManager) -> None:
     """
-    设置全局事件管理器实例
+    Set global event manager instance
     
     Args:
-        event_manager (EventManager): 事件管理器实例
+        event_manager (EventManager): Event manager instance
     """
     global _global_event_manager
     _global_event_manager = event_manager 

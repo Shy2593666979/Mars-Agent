@@ -35,7 +35,7 @@ class MarsAgent:
 
     Typical Usage
     -------------
-    The snippet below provides a minimal, runnable example – see ``test/main.py`` for a full script.
+    The snippet below provides a minimal, runnable example – see ``test/example_agent.py`` for a full script.
 
     ```python
     import asyncio
@@ -66,7 +66,7 @@ class MarsAgent:
             mcp_as_agent=True
         )
 
-        async for event in agent.astream("你好，北京天气怎么样？"):
+        async for event in agent.astream("Hello, how's the weather in Beijing?"):
             # Each event is a dict produced by EventManager
             print(event)
 
@@ -318,8 +318,8 @@ class MarsAgent:
         try:
             # Send model reply start event
             await self.event_manager.emit_progress(
-                "模型回复",
-                "正在生成回复...",
+                "Model Response",
+                "Generating response...",
                 "START",
                 agent="Mars Agent"
             )
@@ -332,8 +332,8 @@ class MarsAgent:
 
             # Send model reply completion event
             await self.event_manager.emit_progress(
-                "模型回复",
-                "回复生成完成",
+                "Model Response",
+                "Response generation completed",
                 "END",
                 agent="Mars Agent"
             )
@@ -346,7 +346,7 @@ class MarsAgent:
                 self.event_manager.create_event(
                     EventType.ERROR,
                     {
-                        "title": "模型回复错误",
+                        "title": "Model Response Error",
                         "message": str(err),
                         "status": "ERROR"
                     }
@@ -354,7 +354,7 @@ class MarsAgent:
             )
             # Send fallback reply
             yield self.event_manager.create_response_chunk_event(
-                "您的问题触及到我的知识盲区，请换个问题吧✨",
+                "Your question touches my knowledge blind spot, please try a different question ✨",
                 response_content
             )
 

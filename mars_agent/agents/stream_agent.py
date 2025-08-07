@@ -141,11 +141,11 @@ class StreamingAgent:
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
         """Tool selection - sub-agent responsible for tool calling decision"""
 
-        select_tool_message = "开始选择可用工具" if self.step_counter == 1 else f"是否需要继续调用工具{' ' * self.step_counter}"
+        select_tool_message = "Start selecting available tools" if self.step_counter == 1 else f"Need to continue calling tools?{' ' * self.step_counter}"
         # Send tool analysis start event to main agent
         await self.event_manager.emit_progress(
             select_tool_message,
-            "正在分析需要使用的工具...",
+            "Analyzing tools to use...",
             "START",
             agent="Stream Agent"
         )
@@ -165,9 +165,8 @@ class StreamingAgent:
 
             self.tool_invocation_model.bind_tools(tools_schema)
 
-            system_message = SystemMessage(content=DEFAULT_CALL_PROMPT)
-            call_tool_messages.append(system_message)
-
+        system_message = SystemMessage(content=DEFAULT_CALL_PROMPT)
+        call_tool_messages.append(system_message)
         call_tool_messages.extend(messages)
 
         response = await self.tool_invocation_model.ainvoke(call_tool_messages)
@@ -181,7 +180,7 @@ class StreamingAgent:
             # Send tool selection completion event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
-                "可用工具：" + ", ".join(set(tool_call_names)),
+                "Available tools: " + ", ".join(set(tool_call_names)),
                 "END",
                 agent="Stream Agent"
             )
@@ -194,11 +193,11 @@ class StreamingAgent:
             # Send no tools available event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
-                "没有命中可用的工具",
+                "No available tools found",
                 "END",
                 agent="Stream Agent"
             )
-            return AIMessage(content="没有命中可用的工具")
+            return AIMessage(content="No available tools found")
 
     async def execute_tool_message(self, messages: List[ToolMessage]):
         """Tool execution - sub-agent responsible for specific tool execution"""
@@ -225,7 +224,7 @@ class StreamingAgent:
                     # Send MCP tool invocation event to main agent
                     await self.event_manager.emit_progress(
                         f"Run MCP Tool: {tool_name}",
-                        f"正在调用MCP工具 {tool_name}...",
+                        f"Calling MCP tool {tool_name}...",
                         "START",
                         agent="Stream Agent"
                     )
@@ -270,8 +269,8 @@ class StreamingAgent:
 
                     # Send plugin tool invocation event to main agent
                     await self.event_manager.emit_progress(
-                        f"执行可用工具: {tool_name}{suffix}",
-                        f"正在调用插件工具 {tool_name}...",
+                        f"Execute available tool: {tool_name}{suffix}",
+                        f"Calling plugin tool {tool_name}...",
                         "START",
                         agent="Stream Agent"
                     )
@@ -284,7 +283,7 @@ class StreamingAgent:
 
                     # Send plugin tool execution completion event to main agent
                     await self.event_manager.emit_progress(
-                        f"执行可用工具: {tool_name}{suffix}",
+                        f"Execute available tool: {tool_name}{suffix}",
                         tool_result,
                         "END",
                         agent="Stream Agent"
@@ -300,7 +299,7 @@ class StreamingAgent:
                         self.event_manager.create_event(
                             EventType.ERROR,
                             {
-                                "title": f"执行可用工具: {tool_name}{suffix}",
+                                "title": f"Execute available tool: {tool_name}{suffix}",
                                 "message": str(err),
                                 "status": "ERROR"
                             }
@@ -371,7 +370,7 @@ class StreamingAgent:
         # Send sub-agent start working event
         await self.event_manager.emit_progress(
             "Stream Agent",
-            "开始执行工具调用...",
+            "Starting tool execution...",
             "START",
             agent="Stream Agent"
         )
@@ -390,7 +389,7 @@ class StreamingAgent:
                 tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
                 await self.event_manager.emit_progress(
                     "Stream Agent",
-                    f"工具执行完成，共执行{tool_count}个工具",
+                    f"Tool execution completed, executed {tool_count} tools",
                     "END",
                     agent="Stream Agent"
                 )
@@ -402,7 +401,7 @@ class StreamingAgent:
                 # Send no tool execution event
                 await self.event_manager.emit_progress(
                     "Stream Agent",
-                    "无工具需要执行",
+                    "No tools need to be executed",
                     "END",
                     agent="Stream Agent"
                 )
@@ -415,7 +414,7 @@ class StreamingAgent:
                     EventType.ERROR,
                     {
                         "title": "Stream Agent",
-                        "message": f"执行失败: {str(err)}",
+                        "message": f"Execution failed: {str(err)}",
                         "status": "ERROR"
                     }
                 )
@@ -433,7 +432,7 @@ class StreamingAgent:
             if tool.name == tool_name:
                 return False, tool
 
-        raise ValueError(f"系统中不存在该工具: {tool_name}")
+        raise ValueError(f"Tool does not exist in the system: {tool_name}")
 
     # Get MCP Server's user config
     def get_mcp_config_by_tool(self, tool_name):

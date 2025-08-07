@@ -100,14 +100,14 @@ class MCPAgent:
 
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
         """MCP tool selection - sub-agent responsible for MCP tool calling decision"""
-        select_tool_message = "开始选择可用工具" if self.step_counter == 1 else f"是否需要继续调用工具{' ' * self.step_counter}"
+        select_tool_message = "Start selecting available tools" if self.step_counter == 1 else f"Need to continue calling tools?{' ' * self.step_counter}"
 
         call_tool_messages: List[BaseMessage] = []
 
         # Send MCP tool analysis start event to main agent
         await self.event_manager.emit_progress(
             select_tool_message,
-            f"正在分析{self.mcp_config.server_name}下需要使用的工具...",
+            f"Analyzing tools to use under {self.mcp_config.server_name}...",
             "START",
             agent=f"{self.mcp_config.server_name} | MCP Agent"
         )
@@ -125,6 +125,8 @@ class MCPAgent:
             call_tool_messages.append(system_message)
             call_tool_messages.append(messages[-1])
         else:
+            system_message = SystemMessage(content=DEFAULT_CALL_PROMPT)
+            call_tool_messages.append(system_message)
             call_tool_messages.extend(messages)
 
         response = await self.tool_invocation_model.ainvoke(call_tool_messages)
@@ -137,25 +139,25 @@ class MCPAgent:
             # Send MCP tool selection completion event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
-                f"{self.mcp_config.server_name}下可用工具：" + ", ".join(set(tool_call_names)),
+                f"Available tools under {self.mcp_config.server_name}: " + ", ".join(set(tool_call_names)),
                 "END",
                 agent=f"{self.mcp_config.server_name} | MCP Agent"
             )
 
             return AIMessage(
-                content="命中可用工具",
+                content="Available tools found",
                 tool_calls=response.tool_calls,
             )
         else:
             await self.event_manager.emit_progress(
                 select_tool_message,
-                "没有命中可用的工具",
+                "No available tools found",
                 "END",
                 agent=f"{self.mcp_config.server_name} | MCP Agent"
             )
 
             # Send no MCP tools available event to main agent
-            return AIMessage(content="没有命中可用的工具")
+            return AIMessage(content="No available tools found")
 
     async def execute_tool_message(self, messages: List[ToolMessage]):
         """MCP tool execution - sub-agent responsible for specific MCP tool execution"""
@@ -178,8 +180,8 @@ class MCPAgent:
 
                 # Send MCP tool execution start event to main agent
                 await self.event_manager.emit_progress(
-                    f"执行MCP可用工具: {tool_name}",
-                    f"正在调用MCP工具 {tool_name}...",
+                    f"Execute MCP available tool: {tool_name}",
+                    f"Calling MCP tool {tool_name}...",
                     "START",
                     agent=f"{self.mcp_config.server_name} | MCP Agent"
                 )
@@ -189,7 +191,7 @@ class MCPAgent:
 
                 # Send MCP tool execution completion event to main agent
                 await self.event_manager.emit_progress(
-                    f"执行MCP可用工具: {tool_name}",
+                    f"Execute MCP available tool: {tool_name}",
                     text_content,
                     "END",
                     agent=f"{self.mcp_config.server_name} | MCP Agent"
@@ -205,7 +207,7 @@ class MCPAgent:
                     self.event_manager.create_event(
                         EventType.ERROR,
                         {
-                            "title": f"执行MCP可用工具: {tool_name}",
+                            "title": f"Execute MCP available tool: {tool_name}",
                             "message": str(err),
                             "status": "ERROR"
                         }
@@ -272,7 +274,7 @@ class MCPAgent:
         # Send MCP Agent start working event
         await self.event_manager.emit_progress(
             f"{self.mcp_config.server_name} | MCP Agent",
-            "开始执行MCP工具调用...",
+            "Starting MCP tool execution...",
             "START",
             agent=f"{self.mcp_config.server_name} | MCP Agent"
         )
@@ -288,7 +290,7 @@ class MCPAgent:
             tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
             await self.event_manager.emit_progress(
                 f"{self.mcp_config.server_name} | MCP Agent",
-                f"MCP工具执行完成，共执行{tool_count}个工具" if tool_count > 0 else "无MCP工具需要执行",
+                f"MCP tool execution completed, executed {tool_count} tools" if tool_count > 0 else "No MCP tools need to be executed",
                 "END",
                 agent=f"{self.mcp_config.server_name} | MCP Agent"
             )
@@ -302,7 +304,7 @@ class MCPAgent:
                     EventType.ERROR,
                     {
                         "title": f"{self.mcp_config.server_name} | MCP Agent",
-                        "message": f"执行失败: {str(err)}",
+                        "message": f"Execution failed: {str(err)}",
                         "status": "ERROR"
                     }
                 )

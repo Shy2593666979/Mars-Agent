@@ -54,7 +54,7 @@ class BaseMarsModel:
 
         return message_dict
 
-    # 将Langchain的格式转为OpenAI的格式适配
+    # Convert Langchain format to OpenAI format adaptation
     def convert_openai_tool_calls(self, tool_calls: List[ToolCall]):
         openai_tool_calls: List[ChatCompletionMessageToolCall] = []
 

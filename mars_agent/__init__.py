@@ -5,7 +5,7 @@ This is a Python-based AI agent system designed with master-sub-agent architectu
 """
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
+__author__ = "MingGuang Tian"
 
 from .agent import MarsAgent
 from .schema import MarsModelConfig, MCPBaseConfig, MCPSSEConfig, MCPStdioConfig
