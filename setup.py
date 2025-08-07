@@ -31,7 +31,7 @@ setup(
     version="0.1.0",
     author="MingGuang Tian",
     author_email="2593666979@qq.com",
-    description="Mars Agent - 基于主副代理架构的AI代理系统，支持MCP协议和流式处理",
+    description="Mars Agent - AI agent system based on master-sub-agent architecture, supporting MCP protocol and streaming processing",
     long_description=read_file("README.md"),
     long_description_content_type="text/markdown",
     url="https://github.com/Shy2593666979/Mars-Agent",

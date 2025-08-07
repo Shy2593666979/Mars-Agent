@@ -1,41 +1,48 @@
 """
-Mars Agent 工具模块
+Mars Agent Utilities Module
 
-此模块包含 Mars Agent 框架中使用的各种工具函数和管理器。
+This module contains various utility functions and managers used in the Mars Agent framework.
 
-Modules:
-    util: 核心工具函数
-    event_manager: 事件管理器
+Main Components:
+- util: Core utility functions
+- event_manager: Event manager
 """
 
-from mars_agent.utils.util import (
-    function_to_args_schema,
-    convert_langchain_tool_calls,
-    convert_openai_tool_calls,
-    mcp_tool_to_args_schema,
-    fix_json_text
-)
+from typing import TYPE_CHECKING
 
-from mars_agent.utils.event_manager import (
-    EventType,
-    StreamEvent,
-    EventManager,
-    get_global_event_manager,
-    set_global_event_manager
-)
+if TYPE_CHECKING:
+    from .util import (
+        mcp_tool_to_args_schema,
+        function_to_args_schema,
+        convert_langchain_tool_calls,
+        fix_json_quotes
+    )
+    from .event_manager import (
+        EventManager,
+        EventType
+    )
 
-__all__ = [
-    # 工具函数
-    "function_to_args_schema",
-    "convert_langchain_tool_calls", 
-    "convert_openai_tool_calls",
-    "mcp_tool_to_args_schema",
-    "fix_json_text",
+# Compatible with old import methods, use lazy import to avoid circular dependencies
+
+def __getattr__(name: str):
+    if name in [
+        'mcp_tool_to_args_schema',
+        'function_to_args_schema', 
+        'convert_langchain_tool_calls',
+        'fix_json_quotes'
+    ]:
+        # Utility functions
+        from .util import (
+            mcp_tool_to_args_schema,
+            function_to_args_schema,
+            convert_langchain_tool_calls,
+            fix_json_quotes
+        )
+        return locals()[name]
     
-    # 事件管理器
-    "EventType",
-    "StreamEvent", 
-    "EventManager",
-    "get_global_event_manager",
-    "set_global_event_manager"
-] 
+    elif name in ['EventManager', 'EventType']:
+        # Event manager
+        from .event_manager import EventManager, EventType
+        return locals()[name]
+    
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'") 

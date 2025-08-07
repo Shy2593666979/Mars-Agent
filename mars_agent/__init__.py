@@ -1,20 +1,20 @@
 """
-Mars Agent - 基于主副代理架构的AI代理系统
+Mars Agent - AI agent system based on master-sub-agent architecture
+
+This is a Python-based AI agent system designed with master-sub-agent architecture, supporting MCP protocol and streaming processing.
 """
 
 __version__ = "0.1.0"
-__author__ = "MingGuang Tian"
-__email__ = "2593666979@qq.com"
+__author__ = "Your Name"
 
-from mars_agent.schema import MarsModelConfig, MCPSSEConfig, MCPStdioConfig, MCPWebsocketConfig, MCPStreamableHttpConfig
-from mars_agent.agent import MarsAgent
+from .agent import MarsAgent
+from .schema import MarsModelConfig, MCPBaseConfig, MCPSSEConfig, MCPStdioConfig
 
 __all__ = [
     "MarsAgent",
     "MarsModelConfig", 
+    "MCPBaseConfig",
     "MCPSSEConfig",
-    "MCPStdioConfig", 
-    "MCPWebsocketConfig",
-    "MCPStreamableHttpConfig",
+    "MCPStdioConfig"
 ]
 

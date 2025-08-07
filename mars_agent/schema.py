@@ -44,7 +44,7 @@ class MCPWebsocketConfig(MCPBaseConfig):
     session_kwargs: Optional[Dict[str, Any]] = None
 
 class MarsModelConfig(BaseModel):
-    model: str = Field(..., description="模型的名称")
-    base_url: str = Field(..., description="模型配置")
-    api_key: str = Field(..., description="模型密钥")
-    temperature: float = Field(default=0.6, description="模型的温度值")
+    model: str = Field(..., description="Name of the model")
+    base_url: str = Field(..., description="Base URL for the model API")
+    api_key: str = Field(..., description="API key for the model")
+    temperature: float = Field(default=0.6, description="Temperature value for the model")

@@ -10,7 +10,9 @@ from openai.types.chat.chat_completion_message_tool_call import Function
 from pydantic import create_model
 
 
-# 将函数转成function schema格式
+# Converts a Python function into a JSON-serializable dictionary
+# that describes the function's signature, including its name,
+# description, and parameters.
 def function_to_args_schema(func) -> dict:
     """
     Converts a Python function into a JSON-serializable dictionary
@@ -40,7 +42,7 @@ def function_to_args_schema(func) -> dict:
         },
     }
 
-# 将OpenAI的function call格式转成Langchain格式做适配
+# Converts OpenAI's function call format to Langchain format for adaptation
 def convert_langchain_tool_calls(tool_calls: List[ChatCompletionMessageToolCall]):
     langchain_tool_calls: List[ToolCall] = []
 
@@ -51,7 +53,7 @@ def convert_langchain_tool_calls(tool_calls: List[ChatCompletionMessageToolCall]
     return langchain_tool_calls
 
 
-# 将Langchain的格式转为OpenAI的格式适配
+# Converts Langchain format to OpenAI format for adaptation
 def convert_openai_tool_calls(self, tool_calls: List[ToolCall]):
     openai_tool_calls: List[ChatCompletionMessageToolCall] = []
 
@@ -77,6 +79,6 @@ def mcp_tool_to_args_schema(name, description, args_schema) -> dict:
 
 def fix_json_text(text: str):
     """
-    Json字符串不允许出现 ' 单引号
-    修复Json字符串"""
+    JSON strings cannot contain single quotes
+    Fix JSON string"""
     return text.replace("'", '"')

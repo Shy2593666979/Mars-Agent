@@ -23,14 +23,25 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_STEP = 5
 
 class MCPAgent:
-    """
-    MCP 副代理 - 负责MCP工具执行
-    
-    职责:
-    - MCP服务器连接和工具调用
-    - 事件上报给主代理
-    - 不负责模型回复（由主代理处理）
-    - 正确的资源生命周期管理
+    """MCPAgent
+
+    Lightweight sub-agent dedicated to executing **MCP (Multi-Channel Plugin) tools**.  It turns every
+    endpoint provided by your MCP servers into a LangChain ``BaseTool`` and decides – step by step –
+    whether and when the tool should be invoked.
+
+    Responsibilities
+    ---------------
+    1. Establish HTTP/SSE connection to each configured MCP server and collect its tool schema.
+    2. Decide which MCP tool(s) should be called according to the latest conversation messages.
+    3. Execute the selected tool(s) asynchronously and forward their results to the shared
+       ``EventManager`` so that the main :class:`mars_agent.agent.MarsAgent` can aggregate them.
+    4. **No natural-language reply is generated here.**  Text generation responsibilities live in the
+       parent agent.
+
+    Usage
+    -----
+    End-users normally do **not** instantiate this class directly.  A ``MCPAgent`` will be created
+    automatically by :class:`mars_agent.agent.MarsAgent` when ``mcp_as_agent`` is set to ``True``.
     """
     
     def __init__(self,
@@ -43,11 +54,11 @@ class MCPAgent:
         self.mcp_manager = MCPManager([mcp_config])
         self.event_queue = event_queue
 
-        # 使用主代理的事件队列，事件自动上报给主代理
+        # Use main agent's event queue, events automatically reported to main agent
         self.event_manager = EventManager(self.event_queue) if self.event_queue else EventManager()
 
         self.mcp_tools: List[BaseTool] = []
-        # 副代理只需要工具调用模型，不需要对话模型
+        # Sub-agent only needs tool calling model, not conversation model
         self.tool_invocation_model = MarsModelManager.get_tool_call_model(tool_call_model_config)
         self.graph = None
         self.step_counter = 0
@@ -55,13 +66,13 @@ class MCPAgent:
         self._initialized = False
 
     async def emit_event(self, data: Dict[Any, Any]):
-        """副代理事件发送 - 自动上报给主代理"""
+        """Sub-agent event sending - automatically report to main agent"""
         await self.event_manager.emit_event(
             self.event_manager.create_event(EventType.EVENT, data)
         )
 
     async def init_mcp_agent(self):
-        """初始化MCP Agent - 带资源管理"""
+        """Initialize MCP Agent - with resource management"""
         try:
             if self._initialized:
                 logger.info(f"MCP Agent {self.mcp_config.server_name} already initialized")
@@ -79,7 +90,7 @@ class MCPAgent:
             raise
 
     async def set_mcp_tools(self):
-        """获取MCP工具"""
+        """Get MCP tools"""
         try:
             mcp_tools = await self.mcp_manager.get_mcp_tools()
             return mcp_tools
@@ -88,12 +99,12 @@ class MCPAgent:
             return []
 
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
-        """MCP工具选择 - 副代理负责MCP工具调用决策"""
+        """MCP tool selection - sub-agent responsible for MCP tool calling decision"""
         select_tool_message = "开始选择可用工具" if self.step_counter == 1 else f"是否需要继续调用工具{' ' * self.step_counter}"
 
         call_tool_messages: List[BaseMessage] = []
 
-        # 发送MCP工具分析开始事件到主代理
+        # Send MCP tool analysis start event to main agent
         await self.event_manager.emit_progress(
             select_tool_message,
             f"正在分析{self.mcp_config.server_name}下需要使用的工具...",
@@ -101,7 +112,7 @@ class MCPAgent:
             agent=f"{self.mcp_config.server_name} | MCP Agent"
         )
 
-        # 只有第一次调用工具的时候才会初始化
+        # Only initialize when calling tools for the first time
         if self.step_counter == 0:
             tools_schema = []
             for tool in self.mcp_tools:
@@ -110,20 +121,20 @@ class MCPAgent:
             self.tool_invocation_model.bind_tools(tools_schema)
 
             system_message = SystemMessage(content=DEFAULT_CALL_PROMPT)
-            # MCP Agent 单独的Prompt，不受历史记录影响
+            # MCP Agent separate Prompt, not affected by history
             call_tool_messages.append(system_message)
             call_tool_messages.append(messages[-1])
         else:
             call_tool_messages.extend(messages)
 
         response = await self.tool_invocation_model.ainvoke(call_tool_messages)
-        # 判断是否有工具可调用
+        # Determine if there are tools available for calling
         if response.tool_calls:
             openai_tool_calls = response.tool_calls
             response.tool_calls = convert_langchain_tool_calls(response.tool_calls)
 
             tool_call_names = [tool_call["name"] for tool_call in response.tool_calls]
-            # 发送MCP工具选择完成事件到主代理
+            # Send MCP tool selection completion event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
                 f"{self.mcp_config.server_name}下可用工具：" + ", ".join(set(tool_call_names)),
@@ -143,16 +154,16 @@ class MCPAgent:
                 agent=f"{self.mcp_config.server_name} | MCP Agent"
             )
 
-            # 发送无MCP工具可用事件到主代理
+            # Send no MCP tools available event to main agent
             return AIMessage(content="没有命中可用的工具")
 
     async def execute_tool_message(self, messages: List[ToolMessage]):
-        """MCP工具执行 - 副代理负责具体MCP工具执行"""
+        """MCP tool execution - sub-agent responsible for specific MCP tool execution"""
         tool_calls = messages[-1].tool_calls
         tool_messages: List[BaseMessage] = []
 
         for tool_call in tool_calls:
-            # 保证不出现竞争条件
+            # Ensure no race conditions occur
             async with self.step_counter_lock:
                 self.step_counter += 1
 
@@ -161,11 +172,11 @@ class MCPAgent:
             tool_args = tool_call["args"]
             tool_call_id = tool_call["id"]
             try:
-                # 针对鉴权的MCP Server需要用户的单独配置，例如飞书、邮箱
+                # For authenticated MCP Servers, user's separate configuration is required, e.g. Feishu, email
                 if self.mcp_config.personal_config:
                     tool_args.update(self.mcp_config.personal_config)
 
-                # 发送MCP工具执行开始事件到主代理
+                # Send MCP tool execution start event to main agent
                 await self.event_manager.emit_progress(
                     f"执行MCP可用工具: {tool_name}",
                     f"正在调用MCP工具 {tool_name}...",
@@ -173,10 +184,10 @@ class MCPAgent:
                     agent=f"{self.mcp_config.server_name} | MCP Agent"
                 )
 
-                # 调用MCP 工具返回全部结果，但是目前仅处理文本数据
+                # Call MCP tool to return all results, but currently only handle text data
                 text_content, no_text_content = await mcp_tool.coroutine(**tool_args)
 
-                # 发送MCP工具执行完成事件到主代理
+                # Send MCP tool execution completion event to main agent
                 await self.event_manager.emit_progress(
                     f"执行MCP可用工具: {tool_name}",
                     text_content,
@@ -189,7 +200,7 @@ class MCPAgent:
                 logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {text_content}")
 
             except Exception as err:
-                # 发送MCP工具执行错误事件到主代理
+                # Send MCP tool execution error event to main agent
                 await self.event_manager.emit_event(
                     self.event_manager.create_event(
                         EventType.ERROR,
@@ -208,14 +219,14 @@ class MCPAgent:
         return tool_messages
 
     async def set_agent_graph(self):
-        """设置MCP Agent的工具执行图"""
+        """Set up MCP Agent's tool execution graph"""
 
-        # 构建调用工具Graph
+        # Build tool calling Graph
         async def should_continue(state: MessagesState):
             messages = state["messages"]
             last_message = messages[-1]
 
-            # 如果工具递归调用次数超过DEFAULT_MAX_STEP次，直接返回END
+            # If tool recursive calls exceed DEFAULT_MAX_STEP times, return END directly
             if self.step_counter > DEFAULT_MAX_STEP:
                 return END
 
@@ -244,21 +255,21 @@ class MCPAgent:
         workflow.add_node("call_tool_node", call_tool_node)
         workflow.add_node("execute_tool_node", execute_tool_node)
 
-        # 设置起始节点
+        # Set start node
         workflow.add_edge(START, "call_tool_node")
-        # 设置判断是否调用工具边
+        # Set edge to determine whether to call tools
         workflow.add_conditional_edges("call_tool_node", should_continue)
-        # 检测是否存在工具递归信息
+        # Detect if tool recursion information exists
         workflow.add_edge("execute_tool_node", "call_tool_node")
 
         self.graph = workflow.compile()
 
     async def ainvoke(self, messages: List[BaseMessage]) -> List[BaseMessage]:
-        """MCP Agent的工具执行 - 只返回MCP工具执行结果，不进行模型回复"""
+        """MCP Agent tool execution - only return MCP tool execution results, no model reply"""
         if not self._initialized:
             await self.init_mcp_agent()
 
-        # 发送MCP Agent开始工作事件
+        # Send MCP Agent start working event
         await self.event_manager.emit_progress(
             f"{self.mcp_config.server_name} | MCP Agent",
             "开始执行MCP工具调用...",
@@ -269,11 +280,11 @@ class MCPAgent:
         try:
             result = await self.graph.ainvoke({"messages": messages})
             messages = []
-            for message in result["messages"][:-1]: # 去除没有命中工具的AIMessage
+            for message in result["messages"][:-1]: # Remove AIMessage that didn't hit tools
                 if not isinstance(message, HumanMessage) and not isinstance(message, SystemMessage):
                     messages.append(message)
             
-            # 发送MCP Agent完成工作事件
+            # Send MCP Agent work completion event
             tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
             await self.event_manager.emit_progress(
                 f"{self.mcp_config.server_name} | MCP Agent",
@@ -299,7 +310,7 @@ class MCPAgent:
             return []
 
     def find_mcp_tool(self, name) -> BaseTool | None:
-        """根据名称查找MCP工具"""
+        """Find MCP tool by name"""
         for tool in self.mcp_tools:
             if tool.name == name:
                 return tool

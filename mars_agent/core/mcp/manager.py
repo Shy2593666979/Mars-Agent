@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import List
+from typing import List, Dict, Any
 
 from langchain_core.tools import BaseTool
 from mars_agent.core.mcp.multi_client import MultiServerMCPClient
@@ -44,46 +44,57 @@ class MCPManager:
                     tool_list.append(tool_dict)
                 result[mcp_config.server_name] = tool_list
         except Exception as err:
-            logger.info(f"获取MCP 服务工具列表出错: {err}")
-        return result
+            logger.info(f"Error getting MCP service tool list: {err}")
+            return {}
 
+    async def call_mcp_tools(self, tool_names: List[str], tool_args: List[Dict[str, Any]]):
+        """
+        Asynchronously and concurrently call multiple MCP tools
+        
+        Args:
+            tool_names: List of tool names
+            tool_args: List of tool parameters, corresponding one-to-one with tool_names
+            
+        Returns:
+            list: List of tool execution results
+        """
+        # Get tool list
+        tools = await self.get_mcp_tools()
+        tool_dict = {tool.name: tool for tool in tools}
+        
+        # Async concurrency
+        async def execute_tool(tool_name: str, args: Dict[str, Any]):
+            # Create async task list
+            if tool_name not in tool_dict:
+                return f"Tool {tool_name} does not exist"
+            
+            tool = tool_dict[tool_name]
+            try:
+                # Create async task
+                if asyncio.iscoroutinefunction(tool.func):
+                    result = await tool.func(**args)
+                else:
+                    # Execute all tasks concurrently
+                    result = await asyncio.to_thread(tool.func, **args)
+                return result
+            except Exception as e:
+                logger.error(f"Error executing tool: {e}")
+                return f"Error executing tool {tool_name}: {e}"
 
-    async def call_mcp_tools(self, mcp_tools_args, is_concurrent=True):
-        tool_results = []
-        callable_tools = {}
+        # Create task list
+        tasks = []
+        for tool_name, args in zip(tool_names, tool_args):
+            task = execute_tool(tool_name, args)
+            tasks.append(task)
+        
+        # Execute all tasks concurrently
         try:
-            # 获取工具列表
-            mcp_tools = await self.multi_server_client.get_tools()
-            for tool in mcp_tools:
-                callable_tools[tool.name] = tool
-            # 异步并发
-            if is_concurrent:
-                # 创建异步任务列表
-                tasks = []
-                for tool_args in mcp_tools_args:
-                    tool_name = tool_args["tool_name"]
-                    tool_args = tool_args["tool_args"]
-                    # 创建异步任务
-                    task = asyncio.create_task(callable_tools[tool_name].coroutine(**tool_args))
-                    tasks.append(task)
-                # 并发执行所有任务
-                for task in asyncio.as_completed(tasks):
-                    try:
-                        result = await task
-                        tool_results.append(result)
-                    except Exception as e:
-                        logger.error(f"执行工具时出错: {e}")
-            else:
-                for tool_args in mcp_tools_args:
-                    tool_name = tool_args["tool_name"]
-                    tool_args = tool_args["tool_args"]
-                    try:
-                        result = await callable_tools[tool_name].coroutine(**tool_args)
-                        tool_results.append(result)
-                    except Exception as e:
-                        tool_results.append(f"执行工具 {tool_name} 时出错: {e}")
-                        logger.error(f"执行工具 {tool_name} 时出错: {e}")
-
+            tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, result in enumerate(tool_results):
+                if isinstance(result, Exception):
+                    tool_results[i] = f"Error executing tool {tool_names[i]}: {result}"
+                    logger.error(f"Error executing tool {tool_names[i]}: {result}")
+            return tool_results
         except Exception as err:
-            logger.error(f"调用工具发生错误：{err}")
-        return tool_results
+            logger.error(f"Error calling tools: {err}")
+            return []

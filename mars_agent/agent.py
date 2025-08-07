@@ -17,12 +17,62 @@ logger = logging.getLogger(__name__)
 
 
 class MarsAgent:
-    """
-    Mars 主代理 - 负责统一事件管理和模型回复
-    
-    架构设计:
-    - 主代理: 负责事件处理、模型调用、流式响应、资源管理
-    - 副代理: StreamingAgent, MCPAgent 负责工具执行，事件上报给主代理
+    """MarsAgent
+
+    The **main entry-point** of the Mars-Agent SDK.  It orchestrates every component involved in the
+    conversation:
+
+    • Handles memory, event routing and error reporting.
+    • Delegates tool execution to the sub-agents (:class:`mars_agent.agents.streaming_agent.StreamingAgent`
+      and :class:`mars_agent.agents.mcp_agent.MCPAgent`).
+    • Calls the large-language model to generate the final natural-language response.
+
+    Architecture
+    ------------
+    1. *MarsAgent* – main controller, owns the LLM and the global :class:`mars_agent.utils.event_manager.EventManager`.
+    2. *StreamingAgent* – executes local plugin functions (and optionally MCP tools) in parallel.
+    3. *MCPAgent* – executes remote tools registered on MCP servers.
+
+    Typical Usage
+    -------------
+    The snippet below provides a minimal, runnable example – see ``test/main.py`` for a full script.
+
+    ```python
+    import asyncio
+    from mars_agent.agent import MarsAgent
+    from mars_agent.schema import MarsModelConfig, MCPSSEConfig
+
+    async def main():
+        agent = MarsAgent(
+            # Tool-calling model used to decide which tool should be invoked
+            tool_call_model_config=MarsModelConfig(model="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+                                                  api_key="<your-key>",
+                                                  base_url="https://api-inference.modelscope.cn/v1"),
+
+            # Conversation model that actually writes the reply
+            model_config=MarsModelConfig(model="qwen-plus",
+                                         api_key="<your-key>",
+                                         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
+
+            # Register ordinary Python functions as plugin tools
+            functions=[lambda location: f"Weather in {location} looks great!"],
+
+            # (Optional) Register MCP servers so their remote tools can be leveraged
+            mcp_configs=[
+                MCPSSEConfig(server_name="Maps", url="https://example.com/sse")
+            ],
+
+            # Let MCPAgent run as an independent sub-agent
+            mcp_as_agent=True
+        )
+
+        async for event in agent.astream("你好，北京天气怎么样？"):
+            # Each event is a dict produced by EventManager
+            print(event)
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
     """
     
     def __init__(self,
@@ -40,7 +90,7 @@ class MarsAgent:
         self.mcp_agents: List[MCPAgent] = []
         self.mcp_configs = mcp_configs
 
-        # 当Tool Call 模型没有被设置时，让Tool Call模型与Conversation 模型保持一致
+        # When Tool Call model is not set, let Tool Call model be consistent with Conversation model
         if not tool_call_model_config:
             self.tool_call_model_config = model_config
         else:
@@ -55,11 +105,11 @@ class MarsAgent:
         self.enable_runtime_logs = enable_runtime_logs
         self._mars_agent_id = mars_agent_id if mars_agent_id else uuid4().hex
 
-        # 主代理的事件队列和事件管理器 - 统一处理所有事件
+        # Main agent's event queue and event manager - handle all events
         self.event_queue = asyncio.Queue()
         self.event_manager = EventManager(self.event_queue)
         
-        # 初始化状态管理
+        # Initialize state management
         self._initialized = False
         self.stream_agent = None
         self.conversation_model = None
@@ -68,14 +118,14 @@ class MarsAgent:
 
 
     async def emit_event(self, data: Dict[Any, Any]):
-        """主代理的事件发送方法 - 统一事件格式"""
+        """Main agent's event sending method - uniform event format"""
         await self.event_manager.emit_event(
             self.event_manager.create_event(EventType.EVENT, data)
         )
 
 
     def init_mars_agent(self):
-        """初始化主代理和所有副代理 - 带资源管理"""
+        """Initialize main agent and all sub-agents - with resource management"""
         try:
             if self._initialized:
                 logger.info("Mars Agent already initialized")
@@ -92,7 +142,7 @@ class MarsAgent:
             if isinstance(self.tool_call_model_config, dict):
                 self.tool_call_model_config = MarsModelConfig(**self.tool_call_model_config)
 
-            # 主代理负责模型调用
+            # Main agent is responsible for model invocation
             self.conversation_model = MarsModelManager.get_conversation_model(self.model_config)
             
             self._initialized = True
@@ -103,30 +153,30 @@ class MarsAgent:
             raise
 
     def init_mcp_agents(self):
-        """初始化MCP Agent，传入主代理的事件队列"""
+        """Initialize MCP Agent, pass the main agent's event queue"""
         self.mcp_agents = []
         for mcp_config in self.mcp_configs:
-            # 将主代理的事件队列传给副代理，实现事件统一管理
+            # Pass the main agent's event queue to sub-agents to achieve unified event management
             mcp_agent = MCPAgent(mcp_config,
                                  self.model_config,
                                  self.tool_call_model_config,
-                                 self.event_queue)  # 副代理使用主代理的事件队列
+                                 self.event_queue)  # Sub-agent uses the main agent's event queue
             self.mcp_agents.append(mcp_agent)
 
     def init_stream_agent(self):
-        """初始化Stream Agent，传入主代理的事件队列"""
+        """Initialize Stream Agent, pass the main agent's event queue"""
         try:
             if self.mcp_as_agent:
                 self.stream_agent = StreamingAgent(self.model_config,
                                                    self.tool_call_model_config,
                                                    functions=self.functions,
-                                                   event_queue=self.event_queue)  # 副代理使用主代理的事件队列
+                                                   event_queue=self.event_queue)  # Sub-agent uses the main agent's event queue
             else:
                 self.stream_agent = StreamingAgent(self.model_config,
                                                    self.tool_call_model_config,
                                                    functions=self.functions,
                                                    mcp_configs=self.mcp_configs,
-                                                   event_queue=self.event_queue)  # 副代理使用主代理的事件队列
+                                                   event_queue=self.event_queue)  # Sub-agent uses the main agent's event queue
             
         except Exception as err:
             logger.error(f"Failed to initialize Stream Agent: {err}")
@@ -137,12 +187,12 @@ class MarsAgent:
         return self._mars_agent_id
 
     async def call_mcp_agent_messages(self, messages: List[BaseMessage]):
-        """调用MCP Agent执行工具，事件自动上报到主代理"""
+        """Invoke MCP Agent to execute tools, events automatically reported to main agent"""
 
         async def process_mcp_agent(mcp_agent: MCPAgent):
-            # MCP Agent执行工具，事件自动发送到主代理事件队列
+            # MCP Agent executes tools, events automatically sent to main agent event queue
             try:
-                # 修复：移除此处的初始化调用，连接已在主代理中统一管理
+                # Fix: Remove the initialization call here, the connection is managed uniformly in the main agent
                 responses = await mcp_agent.ainvoke(messages)
                 return responses
             except Exception as err:
@@ -158,7 +208,7 @@ class MarsAgent:
                 result = await process_mcp_agent(mcp_agent)
                 results.append(result)
 
-        # 获取MCP Agent信息并返回
+        # Get MCP Agent information and return
         mcp_agent_messages: List[BaseMessage] = []
         for result in results:
             if isinstance(result, list):
@@ -168,10 +218,10 @@ class MarsAgent:
         return mcp_agent_messages
 
     async def call_stream_agent_messages(self, messages: List[BaseMessage]):
-        """调用Stream Agent执行工具，事件自动上报到主代理"""
+        """Invoke Stream Agent to execute tools, events automatically reported to main agent"""
         if self.functions and self.stream_agent:
             try:
-                # Stream Agent执行工具，事件自动发送到主代理事件队列
+                # Stream Agent executes tools, events automatically sent to main agent event queue
                 return await self.stream_agent.ainvoke(messages)
             except Exception as err:
                 logger.error(f"Stream Agent execution failed: {err}")
@@ -179,7 +229,7 @@ class MarsAgent:
         return []
 
     async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
-        """主代理的非流式调用 - 统一处理副代理结果和模型回复"""
+        """Main agent's non-streaming invocation - unify sub-agent results and model replies"""
         if not self._initialized:
             self.init_mars_agent()
             
@@ -188,7 +238,7 @@ class MarsAgent:
         elif isinstance(messages, BaseMessage):
             messages = [messages]
 
-        # 并行调用副代理
+        # Parallel invocation of sub-agents
         stream_agent_task = None
         if self.functions:
             stream_agent_task = asyncio.create_task(self.call_stream_agent_messages(messages.copy()))
@@ -197,7 +247,7 @@ class MarsAgent:
         if self.mcp_configs and self.mcp_as_agent:
             mcp_agent_task = asyncio.create_task(self.call_mcp_agent_messages(messages.copy()))
 
-        # 等待副代理完成
+        # Wait for sub-agents to complete
         if stream_agent_task:
             stream_agent_messages = await stream_agent_task
         else:
@@ -208,14 +258,14 @@ class MarsAgent:
         else:
             mcp_agent_messages = None
 
-        # 合并副代理的结果
+        # Merge sub-agent results
         if stream_agent_messages:
             messages.extend(stream_agent_messages)
 
         if mcp_agent_messages:
             messages.extend(mcp_agent_messages)
 
-        # 主代理负责最终的模型调用
+        # Main agent is responsible for final model invocation
         try:
             response = await self.conversation_model.ainvoke(messages)
             return response.content
@@ -225,7 +275,7 @@ class MarsAgent:
 
 
     async def astream(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
-        """主代理的流式调用 - 统一处理事件流和模型回复"""
+        """Main agent's streaming invocation - unify event streams and model replies"""
         # if not self._initialized:
         #     await self.init_mars_agent()
             
@@ -234,7 +284,7 @@ class MarsAgent:
         elif isinstance(messages, BaseMessage):
             messages = [messages]
 
-        # 并行启动副代理任务
+        # Parallel start sub-agent tasks
         stream_agent_task = None
         if self.functions:
             stream_agent_task = asyncio.create_task(self.call_stream_agent_messages(messages.copy()))
@@ -243,30 +293,30 @@ class MarsAgent:
         if self.mcp_configs and self.mcp_as_agent:
             mcp_agent_task = asyncio.create_task(self.call_mcp_agent_messages(messages.copy()))
 
-        # 收集所有副代理任务
+        # Collect all sub-agent tasks
         all_tasks = [task for task in [stream_agent_task, mcp_agent_task] if task is not None]
 
-        # 主代理统一处理事件流 - 接收来自副代理的所有事件
+        # Main agent uniformly handles event streams - receive all events from sub-agents
         async for event in self.event_manager.stream_with_heartbeat(all_tasks):
-            # 运行日志开启时才会有
+            # Only when runtime logs are enabled
             if self.enable_runtime_logs:
                 yield event
 
-        # 等待副代理完成并收集结果
+        # Wait for sub-agents to complete and collect results
         stream_agent_messages = stream_agent_task.result() if stream_agent_task and stream_agent_task.done() else None
         mcp_agent_messages = mcp_agent_task.result() if mcp_agent_task and mcp_agent_task.done() else None
 
-        # 合并副代理的工具执行结果
+        # Merge sub-agent tool execution results
         if stream_agent_messages:
             messages.extend(stream_agent_messages)
 
         if mcp_agent_messages:
             messages.extend(mcp_agent_messages)
 
-        # 主代理负责最终的模型回复流式处理
+        # Main agent is responsible for final model reply streaming
         response_content = ""
         try:
-            # 发送模型回复开始事件
+            # Send model reply start event
             await self.event_manager.emit_progress(
                 "模型回复",
                 "正在生成回复...",
@@ -277,10 +327,10 @@ class MarsAgent:
             async for chunk in self.conversation_model.astream(messages):
                 if chunk.content:
                     response_content += chunk.content
-                    # 主代理统一处理响应块事件
+                    # Main agent uniformly handles response chunk events
                     yield self.event_manager.create_response_chunk_event(chunk.content, response_content)
 
-            # 发送模型回复完成事件
+            # Send model reply completion event
             await self.event_manager.emit_progress(
                 "模型回复",
                 "回复生成完成",
@@ -288,10 +338,10 @@ class MarsAgent:
                 agent="Mars Agent"
             )
             
-        # 主代理统一处理错误
+        # Main agent uniformly handles errors
         except Exception as err:
             logger.error(f"LLM Model Error: {err}")
-            # 发送错误事件
+            # Send error event
             await self.event_manager.emit_event(
                 self.event_manager.create_event(
                     EventType.ERROR,
@@ -302,18 +352,18 @@ class MarsAgent:
                     }
                 )
             )
-            # 发送兜底回复
+            # Send fallback reply
             yield self.event_manager.create_response_chunk_event(
                 "您的问题触及到我的知识盲区，请换个问题吧✨",
                 response_content
             )
 
     def invoke(self):
-        """同步调用接口（待实现）"""
+        """Synchronous invocation interface (to be implemented)"""
         pass
 
     def stream(self):
-        """同步流式接口（待实现）"""
+        """Synchronous streaming interface (to be implemented)"""
         pass
 
 

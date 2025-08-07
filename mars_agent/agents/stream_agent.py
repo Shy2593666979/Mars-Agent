@@ -21,14 +21,23 @@ from mars_agent.utils.event_manager import EventManager, EventType
 logger = logging.getLogger(__name__)
 
 class StreamingAgent:
-    """
-    Stream 副代理 - 负责插件和MCP工具执行
-    
-    职责:
-    - 工具调用和执行
-    - 事件上报给主代理
-    - 不负责模型回复（由主代理处理）
-    - 正确的资源生命周期管理
+    """StreamingAgent
+
+    Sub-agent that can invoke **both user-provided plugin functions and MCP tools**.  It analyses the
+    current conversation, decides which tool(s) should be run, performs the calls asynchronously and
+    pushes progress/result events back to the main :class:`mars_agent.agent.MarsAgent`.
+
+    Responsibilities
+    ---------------
+    1. Select appropriate plugin or MCP tool according to conversation context.
+    2. Execute the tool in an asynchronous, non-blocking way.
+    3. Report every progress, success or error through the shared ``EventManager``.
+    4. **Does not generate any LLM response** – that task belongs to the main agent.
+
+    Usage
+    -----
+    ``StreamingAgent`` instances are automatically created by :class:`mars_agent.agent.MarsAgent`.
+    End-users rarely need to touch this class directly.
     """
     
     def __init__(self,
@@ -38,7 +47,7 @@ class StreamingAgent:
                  functions: List[Union[Callable[..., str], Callable[..., Awaitable[str]]]] = [],
                  event_queue: asyncio.Queue = None):
 
-        # 副代理只需要工具调用模型，不需要对话模型
+        # Sub-agent only needs tool calling model, not conversation model
         self.tool_invocation_model = MarsModelManager.get_tool_call_model(tool_call_model_config)
         self.plugin_tools = []
         self.mcp_tools = []
@@ -48,30 +57,30 @@ class StreamingAgent:
         self.mcp_manager = MCPManager(mcp_configs)
         self.functions = functions
 
-        # 使用主代理的事件队列，事件自动上报给主代理
+        # Use main agent's event queue, events automatically reported to main agent
         self.event_queue = event_queue
         self.event_manager = EventManager(self.event_queue) if self.event_queue else EventManager()
         self.step_counter_lock = asyncio.Lock()
         self.step_counter = 1
 
-        # 记录工具调用次数
+        # Record tool call count
         self.tool_call_count: dict[str, int] = {}
 
-        # 根据server name找user config
+        # Find user config by server name
         self.server_dict: dict[str, Any] = {}
         
-        # 初始化状态管理
+        # Initialize state management
         self._initialized = False
 
 
     async def emit_event(self, data: Dict[Any, Any]):
-        """副代理事件发送 - 自动上报给主代理"""
+        """Sub-agent event sending - automatically report to main agent"""
         await self.event_manager.emit_event(
             self.event_manager.create_event(EventType.EVENT, data)
         )
 
     async def init_stream_agent(self):
-        """初始化副代理 - 带资源管理"""
+        """Initialize sub-agent - with resource management"""
         try:
             if self._initialized:
                 logger.info("Stream Agent already initialized")
@@ -90,13 +99,13 @@ class StreamingAgent:
             raise
 
     async def init_mcp_tools(self):
-        """初始化MCP工具 - 带错误处理"""
+        """Initialize MCP tools - with error handling"""
         if not self.mcp_configs:
             self.mcp_tools = []
             return
             
         try:
-            # 与MCP Server建立链接
+            # Establish connection with MCP Server
             self.mcp_tools = await self.mcp_manager.get_mcp_tools()
 
             mcp_servers_info = await self.mcp_manager.show_mcp_tools()
@@ -109,10 +118,10 @@ class StreamingAgent:
             self.mcp_tools = []
 
     async def init_plugin_tools(self):
-        """初始化插件工具 - 带错误处理"""
+        """Initialize plugin tools - with error handling"""
         self.plugin_tools = []
 
-        # 无意义函数，但是Tool需要一个func
+        # Meaningless function, but Tool needs a func
         def _t():
             pass
 
@@ -130,10 +139,10 @@ class StreamingAgent:
             self.plugin_tools = []
 
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
-        """工具选择 - 副代理负责工具调用决策"""
+        """Tool selection - sub-agent responsible for tool calling decision"""
 
         select_tool_message = "开始选择可用工具" if self.step_counter == 1 else f"是否需要继续调用工具{' ' * self.step_counter}"
-        # 发送工具分析开始事件到主代理
+        # Send tool analysis start event to main agent
         await self.event_manager.emit_progress(
             select_tool_message,
             "正在分析需要使用的工具...",
@@ -142,7 +151,7 @@ class StreamingAgent:
         )
 
         call_tool_messages: List[BaseMessage] = []
-        # 只有第一次调用工具的时候才会初始化
+        # Only initialize when calling tools for the first time
         if self.step_counter == 1:
             tools_schema = []
             for tool in self.tools:
@@ -162,14 +171,14 @@ class StreamingAgent:
         call_tool_messages.extend(messages)
 
         response = await self.tool_invocation_model.ainvoke(call_tool_messages)
-        # 判断是否有工具可调用
+        # Determine if there are tools available for calling
         if response.tool_calls:
             openai_tool_calls = response.tool_calls
 
             response.tool_calls = convert_langchain_tool_calls(response.tool_calls)
 
             tool_call_names = [tool_call["name"] for tool_call in response.tool_calls]
-            # 发送工具选择完成事件到主代理
+            # Send tool selection completion event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
                 "可用工具：" + ", ".join(set(tool_call_names)),
@@ -182,7 +191,7 @@ class StreamingAgent:
                 tool_calls=response.tool_calls,
             )
         else:
-            # 发送无工具可用事件到主代理
+            # Send no tools available event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
                 "没有命中可用的工具",
@@ -192,11 +201,11 @@ class StreamingAgent:
             return AIMessage(content="没有命中可用的工具")
 
     async def execute_tool_message(self, messages: List[ToolMessage]):
-        """工具执行 - 副代理负责具体工具执行"""
+        """Tool execution - sub-agent responsible for specific tool execution"""
         tool_calls = messages[-1].tool_calls
         tool_messages: List[BaseMessage] = []
 
-        # 保证不出现竞争条件
+        # Ensure no race conditions occur
         async with self.step_counter_lock:
             self.step_counter += 1
 
@@ -213,7 +222,7 @@ class StreamingAgent:
                     if personal_config:
                         tool_args.update(personal_config)
 
-                    # 发送MCP工具调用事件到主代理
+                    # Send MCP tool invocation event to main agent
                     await self.event_manager.emit_progress(
                         f"Run MCP Tool: {tool_name}",
                         f"正在调用MCP工具 {tool_name}...",
@@ -221,10 +230,10 @@ class StreamingAgent:
                         agent="Stream Agent"
                     )
 
-                    # 调用MCP 工具返回全部结果，但是目前仅处理文本数据
+                    # Call MCP tool to return all results, but currently only handle text data
                     text_content, no_text_content = await use_tool.coroutine(**tool_args)
 
-                    # 发送MCP工具执行完成事件到主代理
+                    # Send MCP tool execution completion event to main agent
                     await self.event_manager.emit_progress(
                         f"Run MCP Tool: {tool_name}",
                         text_content,
@@ -237,7 +246,7 @@ class StreamingAgent:
                     logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {text_content}")
 
                 except Exception as err:
-                    # 发送MCP工具执行错误事件到主代理
+                    # Send MCP tool execution error event to main agent
                     await self.event_manager.emit_event(
                         self.event_manager.create_event(
                             EventType.ERROR,
@@ -255,11 +264,11 @@ class StreamingAgent:
             else:
 
                 try:
-                    # 给加个后缀保证事件消息不卡掉
+                    # Add suffix to ensure event messages don't get stuck
                     suffix = " " * self.tool_call_count.get(tool_name, 0)
                     self.tool_call_count[tool_name] = self.tool_call_count.get(tool_name, 0) + 1
 
-                    # 发送插件工具调用事件到主代理
+                    # Send plugin tool invocation event to main agent
                     await self.event_manager.emit_progress(
                         f"执行可用工具: {tool_name}{suffix}",
                         f"正在调用插件工具 {tool_name}...",
@@ -270,10 +279,10 @@ class StreamingAgent:
                     if hasattr(use_tool, "coroutine") and use_tool.coroutine is not None:
                         tool_result = await use_tool.coroutine(**tool_args)
                     else:
-                        # 改为异步
+                        # Convert to async
                         tool_result = await asyncio.to_thread(use_tool.func, **tool_args)
 
-                    # 发送插件工具执行完成事件到主代理
+                    # Send plugin tool execution completion event to main agent
                     await self.event_manager.emit_progress(
                         f"执行可用工具: {tool_name}{suffix}",
                         tool_result,
@@ -286,7 +295,7 @@ class StreamingAgent:
                     logger.info(f"Plugin Tool {tool_name}, Args: {tool_args}, Result: {tool_result}")
 
                 except Exception as err:
-                    # 发送插件工具执行错误事件到主代理
+                    # Send plugin tool execution error event to main agent
                     await self.event_manager.emit_event(
                         self.event_manager.create_event(
                             EventType.ERROR,
@@ -306,14 +315,14 @@ class StreamingAgent:
 
 
     async def set_agent_graph(self):
-        """设置副代理的工具执行图"""
+        """Set up sub-agent's tool execution graph"""
 
-        # 构建调用工具Graph
+        # Build tool calling Graph
         async def should_continue(state: MessagesState):
             messages = state["messages"]
             last_message = messages[-1]
 
-            # 如果工具递归调用次数超过5次，直接返回END
+            # If tool recursive calls exceed 5 times, return END directly
             if self.step_counter > 5:
                 return END
 
@@ -345,21 +354,21 @@ class StreamingAgent:
         workflow.add_node("call_tool_node", call_tool_node)
         workflow.add_node("execute_tool_node", execute_tool_node)
 
-        # 设置起始节点
+        # Set start node
         workflow.add_edge(START, "call_tool_node")
-        # 设置判断是否调用工具边
+        # Set edge to determine whether to call tools
         workflow.add_conditional_edges("call_tool_node", should_continue)
-        # 检测是否存在工具递归信息
+        # Detect if tool recursion information exists
         workflow.add_edge("execute_tool_node", "call_tool_node")
 
         self.graph = workflow.compile()
 
     async def ainvoke(self, messages: List[BaseMessage]):
-        """副代理的工具执行 - 只返回工具执行结果，不进行模型回复"""
+        """Sub-agent tool execution - only return tool execution results, no model reply"""
         if not self._initialized:
             await self.init_stream_agent()
             
-        # 发送副代理开始工作事件
+        # Send sub-agent start working event
         await self.event_manager.emit_progress(
             "Stream Agent",
             "开始执行工具调用...",
@@ -372,12 +381,12 @@ class StreamingAgent:
             if self.tools and len(self.tools) != 0:
                 graph_task = asyncio.create_task(self.graph.ainvoke({"messages": messages}))
 
-            # 等待工具执行完成
+            # Wait for tool execution to complete
             if graph_task:
                 results = await graph_task
-                messages = results["messages"][:-1]  # 去除没有命中工具的message
+                messages = results["messages"][:-1]  # Remove messages that didn't hit tools
                 
-                # 发送副代理完成工作事件
+                # Send sub-agent work completion event
                 tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
                 await self.event_manager.emit_progress(
                     "Stream Agent",
@@ -390,7 +399,7 @@ class StreamingAgent:
 
                 return messages
             else:
-                # 发送无工具执行事件
+                # Send no tool execution event
                 await self.event_manager.emit_progress(
                     "Stream Agent",
                     "无工具需要执行",
@@ -413,9 +422,9 @@ class StreamingAgent:
             )
             return []
 
-    # 新增辅助方法
+    # Additional helper methods
     def find_tool_use(self, tool_name: str):
-        """判断是否为MCP工具并返回对应的工具实例"""
+        """Determine if it's an MCP tool and return the corresponding tool instance"""
         for tool in self.mcp_tools:
             if tool.name == tool_name:
                 return True, tool
@@ -426,7 +435,7 @@ class StreamingAgent:
 
         raise ValueError(f"系统中不存在该工具: {tool_name}")
 
-    # 获得MCP Server 的 user config
+    # Get MCP Server's user config
     def get_mcp_config_by_tool(self, tool_name):
         for server_name, tools in self.server_dict.items():
             if tool_name in tools:
