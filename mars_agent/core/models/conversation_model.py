@@ -34,6 +34,5 @@ class ConversationModel(BaseMarsModel):
             model=self.model_name,
             messages=user_messages,
             temperature=self.temperature,
-            tools=self.tools
         )
         return response.choices[0].message

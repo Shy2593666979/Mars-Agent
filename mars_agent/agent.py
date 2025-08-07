@@ -32,7 +32,8 @@ class MarsAgent:
                  functions: List[Union[Callable[..., str], Callable[..., Awaitable[str]]]] = [],
                  memory_path: str = None,
                  mcp_as_agent: bool = True,
-                 enable_memory: bool = False,
+                 enable_memory: bool = True,
+                 enable_runtime_logs: bool = True,
                  enable_mcp_concurrency: bool = True,
                  mcp_configs: List[MCPBaseConfig] = []):
 
@@ -51,6 +52,7 @@ class MarsAgent:
         self.mcp_as_agent = mcp_as_agent
         self.enable_memory = enable_memory
         self.functions = functions
+        self.enable_runtime_logs = enable_runtime_logs
         self._mars_agent_id = mars_agent_id if mars_agent_id else uuid4().hex
 
         # 主代理的事件队列和事件管理器 - 统一处理所有事件
@@ -101,7 +103,7 @@ class MarsAgent:
             raise
 
     def init_mcp_agents(self):
-        """初始化MCP副代理，传入主代理的事件队列"""
+        """初始化MCP Agent，传入主代理的事件队列"""
         self.mcp_agents = []
         for mcp_config in self.mcp_configs:
             # 将主代理的事件队列传给副代理，实现事件统一管理
@@ -113,7 +115,7 @@ class MarsAgent:
 
     # # 新增：在主代理的生命周期内统一初始化所有MCP连接
     # async def init_mcp_connections(self):
-    #     """为所有MCP副代理初始化连接"""
+    #     """为所有MCP Agent初始化连接"""
     #     if self.enable_mcp_concurrency:
     #         init_tasks = [agent.init_mcp_agent() for agent in self.mcp_agents]
     #         results = await asyncio.gather(*init_tasks, return_exceptions=True)
@@ -128,7 +130,7 @@ class MarsAgent:
     #                 logger.error(f"Failed to initialize an MCP agent: {e}")
 
     def init_stream_agent(self):
-        """初始化Stream副代理，传入主代理的事件队列"""
+        """初始化Stream Agent，传入主代理的事件队列"""
         try:
             if self.mcp_as_agent:
                 self.stream_agent = StreamingAgent(self.model_config,
@@ -151,10 +153,10 @@ class MarsAgent:
         return self._mars_agent_id
 
     async def call_mcp_agent_messages(self, messages: List[BaseMessage]):
-        """调用MCP副代理执行工具，事件自动上报到主代理"""
+        """调用MCP Agent执行工具，事件自动上报到主代理"""
 
         async def process_mcp_agent(mcp_agent: MCPAgent):
-            # MCP副代理执行工具，事件自动发送到主代理事件队列
+            # MCP Agent执行工具，事件自动发送到主代理事件队列
             try:
                 # 修复：移除此处的初始化调用，连接已在主代理中统一管理
                 responses = await mcp_agent.ainvoke(messages)
@@ -182,10 +184,10 @@ class MarsAgent:
         return mcp_agent_messages
 
     async def call_stream_agent_messages(self, messages: List[BaseMessage]):
-        """调用Stream副代理执行工具，事件自动上报到主代理"""
+        """调用Stream Agent执行工具，事件自动上报到主代理"""
         if self.functions and self.stream_agent:
             try:
-                # Stream副代理执行工具，事件自动发送到主代理事件队列
+                # Stream Agent执行工具，事件自动发送到主代理事件队列
                 return await self.stream_agent.ainvoke(messages)
             except Exception as err:
                 logger.error(f"Stream Agent execution failed: {err}")
@@ -232,7 +234,7 @@ class MarsAgent:
         # 主代理负责最终的模型调用
         try:
             response = await self.conversation_model.ainvoke(messages)
-            return response
+            return response.content
         except Exception as err:
             logger.error(f"Main agent model invocation failed: {err}")
             raise
@@ -262,7 +264,9 @@ class MarsAgent:
 
         # 主代理统一处理事件流 - 接收来自副代理的所有事件
         async for event in self.event_manager.stream_with_heartbeat(all_tasks):
-            yield event
+            # 运行日志开启时才会有
+            if self.enable_runtime_logs:
+                yield event
 
         # 等待副代理完成并收集结果
         stream_agent_messages = stream_agent_task.result() if stream_agent_task and stream_agent_task.done() else None

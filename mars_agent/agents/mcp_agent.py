@@ -61,7 +61,7 @@ class MCPAgent:
         )
 
     async def init_mcp_agent(self):
-        """初始化MCP副代理 - 带资源管理"""
+        """初始化MCP Agent - 带资源管理"""
         try:
             if self._initialized:
                 logger.info(f"MCP Agent {self.mcp_config.server_name} already initialized")
@@ -197,7 +197,7 @@ class MCPAgent:
         return tool_messages
 
     async def set_agent_graph(self):
-        """设置MCP副代理的工具执行图"""
+        """设置MCP Agent的工具执行图"""
 
         # 构建调用工具Graph
         async def should_continue(state: MessagesState):
@@ -243,13 +243,13 @@ class MCPAgent:
         self.graph = workflow.compile()
 
     async def ainvoke(self, messages: List[BaseMessage]) -> List[BaseMessage]:
-        """MCP副代理的工具执行 - 只返回MCP工具执行结果，不进行模型回复"""
+        """MCP Agent的工具执行 - 只返回MCP工具执行结果，不进行模型回复"""
         if not self._initialized:
             await self.init_mcp_agent()
 
-        # 发送MCP副代理开始工作事件
+        # 发送MCP Agent开始工作事件
         await self.event_manager.emit_progress(
-            f"MCP副代理: {self.mcp_config.server_name}",
+            f"{self.mcp_config.server_name} | MCP Agent",
             "开始执行MCP工具调用...",
             "START"
         )
@@ -261,10 +261,10 @@ class MCPAgent:
                 if not isinstance(message, HumanMessage) and not isinstance(message, SystemMessage):
                     messages.append(message)
             
-            # 发送MCP副代理完成工作事件
+            # 发送MCP Agent完成工作事件
             tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
             await self.event_manager.emit_progress(
-                f"MCP副代理: {self.mcp_config.server_name}",
+                f"{self.mcp_config.server_name} | MCP Agent",
                 f"MCP工具执行完成，共执行{tool_count}个工具" if tool_count > 0 else "无MCP工具需要执行",
                 "END"
             )
@@ -277,7 +277,7 @@ class MCPAgent:
                 self.event_manager.create_event(
                     EventType.ERROR,
                     {
-                        "title": f"MCP副代理: {self.mcp_config.server_name}",
+                        "title": f"{self.mcp_config.server_name} | MCP Agent",
                         "message": f"执行失败: {str(err)}",
                         "status": "ERROR"
                     }

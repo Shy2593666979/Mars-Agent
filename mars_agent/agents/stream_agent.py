@@ -354,7 +354,7 @@ class StreamingAgent:
             
         # 发送副代理开始工作事件
         await self.event_manager.emit_progress(
-            "Stream副代理",
+            "Stream Agent",
             "开始执行工具调用...",
             "START"
         )
@@ -372,7 +372,7 @@ class StreamingAgent:
                 # 发送副代理完成工作事件
                 tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
                 await self.event_manager.emit_progress(
-                    "Stream副代理",
+                    "Stream Agent",
                     f"工具执行完成，共执行{tool_count}个工具",
                     "END"
                 )
@@ -383,7 +383,7 @@ class StreamingAgent:
             else:
                 # 发送无工具执行事件
                 await self.event_manager.emit_progress(
-                    "Stream副代理",
+                    "Stream Agent",
                     "无工具需要执行",
                     "END"
                 )
@@ -395,7 +395,7 @@ class StreamingAgent:
                 self.event_manager.create_event(
                     EventType.ERROR,
                     {
-                        "title": "Stream副代理",
+                        "title": "Stream Agent",
                         "message": f"执行失败: {str(err)}",
                         "status": "ERROR"
                     }

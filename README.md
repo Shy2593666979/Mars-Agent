@@ -42,8 +42,8 @@ Mars Agent 采用主副代理架构模式，实现清晰的职责分离和集中
 **主要方法:**
 - `astream()`: 流式对话接口，统一事件处理
 - `ainvoke()`: 非流式对话接口
-- `call_mcp_agent_messages()`: 调度MCP副代理
-- `call_stream_agent_messages()`: 调度Stream副代理
+- `call_mcp_agent_messages()`: 调度MCP Agent
+- `call_stream_agent_messages()`: 调度Stream Agent
 
 ### 🔧 StreamingAgent (副代理)
 

@@ -240,7 +240,7 @@ class EventManager:
     async def stream_with_heartbeat(
         self, 
         tasks: list, 
-        heartbeat_interval: float = 5.0,
+        heartbeat_interval: float = 10.0,
         heartbeat_message: str = "连接保持中..."
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
