@@ -227,9 +227,9 @@ class EventManager:
         self, 
         title: str, 
         message: str, 
-        status: str, 
+        status: str,
+        agent: Optional[str] = None,
         progress: Optional[int] = None,
-        agent: Optional[str] = None
     ) -> None:
         """
         Send progress event

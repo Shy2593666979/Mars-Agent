@@ -36,7 +36,7 @@ def __getattr__(name: str):
             mcp_tool_to_args_schema,
             function_to_args_schema,
             convert_langchain_tool_calls,
-            fix_json_quotes
+            fix_json_text
         )
         return locals()[name]
     

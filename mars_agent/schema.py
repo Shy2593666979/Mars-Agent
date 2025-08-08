@@ -1,7 +1,88 @@
+from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 from typing import List, Any, Dict, Optional, Literal
+
+
+class EventStatusType:
+    """事件状态常量"""
+    ERROR = "ERROR"
+    SUCCESS = "SUCCESS"
+    START = "START"
+    END = "END"
+    PROGRESS = "PROGRESS"
+
+
+class EventAgentType:
+    """事件代理类型"""
+    MARS_AGENT = "Mars Agent"
+    MCP_AGENT = "MCP Agent - {server_name}"
+    STREAM_AGENT = "Stream Agent"
+    PLAN_AGENT = "Plan Agent"
+
+
+class EventTitleType:
+    """事件标题类型"""
+    # 工具选择相关
+    SELECT_TOOL = "Start Selecting Available Tools"
+    CONTINUE_SELECT_TOOL = "Need To Continue Calling Tools?"
+    
+    # MCP 工具执行相关
+    EXECUTE_MCP_TOOL = "Execute MCP Tool: {tool_name}"
+    
+    # 插件工具执行相关
+    EXECUTE_PLUGIN_TOOL = "Execute Plugin Tool: {tool_name}"
+    
+    # Stream Agent 相关
+    STREAM_AGENT_START = "Stream Agent"
+    
+    # 模型响应相关
+    MODEL_RESPONSE = "Model Response"
+    MODEL_RESPONSE_ERROR = "Model Response Error"
+
+
+class EventMessageType:
+    """事件消息类型"""
+    # 工具调用消息
+    CALL_MCP_TOOL = "Calling MCP tool {tool_name}..."
+    
+    CALL_PLUGIN_TOOL = "Calling plugin tool {tool_name}..."
+    
+    # 可用工具消息
+    AVAILABLE_MCP_TOOL = "Available MCP Tools Under {server_name}: {tool_name}"
+    
+    AVAILABLE_PLUGIN_TOOL = "Available Plugin Tools: {tool_name}"
+    
+    AVAILABLE_TOOLS = "Available tools: {tool_name}"
+    
+    # 通用消息
+    NO_AVAILABLE_TOOL = "No available tools found"
+    
+    # 执行过程消息
+    ANALYZING_TOOLS = "Analyzing tools to use..."
+    STARTING_TOOL_EXECUTION = "Starting tool execution..."
+    TOOL_EXECUTION_COMPLETED = "Tool execution completed, executed {tool_count} tools"
+    
+    NO_TOOLS_NEEDED = "No tools need to be executed"
+    
+    # MCP Agent 消息
+    MCP_AGENT_STARTING = "Starting MCP tool execution..."
+    
+    MCP_AGENT_COMPLETED = "MCP tool execution completed, executed {tool_count} tools"
+    MCP_AGENT_NO_TOOLS = "No MCP tools need to be executed"
+    
+    ANALYZING_MCP_TOOLS = "Analyzing tools to use under {server_name}..."
+    
+    # 错误消息
+    TOOL_ERROR = "{err}"
+    
+    EXECUTION_FAILED = "Execution failed: {err}"
+    
+    # 模型响应消息
+    GENERATING_RESPONSE = "Generating response..."
+    RESPONSE_COMPLETED = "Response generation completed"
+
 
 class MCPBaseConfig(BaseModel):
     server_name: str

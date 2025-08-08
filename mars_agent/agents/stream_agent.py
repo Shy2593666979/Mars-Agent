@@ -10,7 +10,7 @@ from langchain_core.tools import BaseTool, Tool
 from langgraph.graph import MessagesState, StateGraph, END, START
 from collections.abc import Awaitable
 
-from mars_agent.schema import MarsModelConfig
+from mars_agent.schema import MarsModelConfig, EventStatusType, EventAgentType, EventMessageType, EventTitleType
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.prompts.chat_prompt import DEFAULT_CALL_PROMPT
 from mars_agent.core.mcp.manager import MCPManager
@@ -141,13 +141,13 @@ class StreamingAgent:
     async def call_tools_messages(self, messages: List[BaseMessage]) -> AIMessage:
         """Tool selection - sub-agent responsible for tool calling decision"""
 
-        select_tool_message = "Start selecting available tools" if self.step_counter == 1 else f"Need to continue calling tools?{' ' * self.step_counter}"
+        select_tool_message = EventTitleType.SELECT_TOOL if self.step_counter == 1 else EventTitleType.CONTINUE_SELECT_TOOL
         # Send tool analysis start event to main agent
         await self.event_manager.emit_progress(
             select_tool_message,
-            "Analyzing tools to use...",
-            "START",
-            agent="Stream Agent"
+            EventMessageType.ANALYZING_TOOLS,
+            EventStatusType.START,
+            EventAgentType.STREAM_AGENT
         )
 
         call_tool_messages: List[BaseMessage] = []
@@ -180,9 +180,9 @@ class StreamingAgent:
             # Send tool selection completion event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
-                "Available tools: " + ", ".join(set(tool_call_names)),
-                "END",
-                agent="Stream Agent"
+                EventMessageType.AVAILABLE_TOOLS.format(tool_name=", ".join(set(tool_call_names))),
+                EventStatusType.END,
+                EventAgentType.STREAM_AGENT
             )
 
             return AIMessage(
@@ -193,9 +193,9 @@ class StreamingAgent:
             # Send no tools available event to main agent
             await self.event_manager.emit_progress(
                 select_tool_message,
-                "No available tools found",
-                "END",
-                agent="Stream Agent"
+                EventMessageType.NO_AVAILABLE_TOOL,
+                EventStatusType.END,
+                EventAgentType.STREAM_AGENT
             )
             return AIMessage(content="No available tools found")
 
@@ -223,10 +223,10 @@ class StreamingAgent:
 
                     # Send MCP tool invocation event to main agent
                     await self.event_manager.emit_progress(
-                        f"Run MCP Tool: {tool_name}",
-                        f"Calling MCP tool {tool_name}...",
-                        "START",
-                        agent="Stream Agent"
+                        EventTitleType.EXECUTE_MCP_TOOL.format(tool_name=tool_name),
+                        EventMessageType.CALL_MCP_TOOL.format(tool_name=tool_name),
+                        EventStatusType.START,
+                        EventAgentType.STREAM_AGENT
                     )
 
                     # Call MCP tool to return all results, but currently only handle text data
@@ -234,14 +234,14 @@ class StreamingAgent:
 
                     # Send MCP tool execution completion event to main agent
                     await self.event_manager.emit_progress(
-                        f"Run MCP Tool: {tool_name}",
+                        EventTitleType.EXECUTE_MCP_TOOL.format(tool_name=tool_name),
                         text_content,
-                        "END",
-                        agent="Stream Agent"
+                        EventStatusType.END,
+                        EventAgentType.STREAM_AGENT
                     )
 
                     tool_messages.append(
-                        ToolMessage(content=text_content, name=tool_name + "_mcp", tool_call_id=tool_call_id))
+                        ToolMessage(content=text_content, name=tool_name, tool_call_id=tool_call_id))
                     logger.info(f"MCP Tool {tool_name}, Args: {tool_args}, Result: {text_content}")
 
                 except Exception as err:
@@ -250,16 +250,16 @@ class StreamingAgent:
                         self.event_manager.create_event(
                             EventType.ERROR,
                             {
-                                "title": f"Run MCP Tool: {tool_name}",
-                                "message": str(err),
-                                "status": "ERROR"
+                                "title": EventTitleType.EXECUTE_MCP_TOOL.format(tool_name=tool_name),
+                                "message": EventMessageType.TOOL_ERROR.format(err=str(err)),
+                                "status": EventStatusType.ERROR
                             }
                         )
                     )
 
                     logger.error(f"MCP Tool {tool_name} Error: {str(err)}")
                     tool_messages.append(
-                        ToolMessage(content=str(err), name=tool_name + "_mcp", tool_call_id=tool_call_id))
+                        ToolMessage(content=str(err), name=tool_name, tool_call_id=tool_call_id))
             else:
 
                 try:
@@ -269,10 +269,10 @@ class StreamingAgent:
 
                     # Send plugin tool invocation event to main agent
                     await self.event_manager.emit_progress(
-                        f"Execute available tool: {tool_name}{suffix}",
-                        f"Calling plugin tool {tool_name}...",
-                        "START",
-                        agent="Stream Agent"
+                        EventTitleType.EXECUTE_PLUGIN_TOOL.format(tool_name=tool_name),
+                        EventMessageType.CALL_PLUGIN_TOOL.format(tool_name=tool_name),
+                        EventStatusType.START,
+                        EventAgentType.STREAM_AGENT
                     )
 
                     if hasattr(use_tool, "coroutine") and use_tool.coroutine is not None:
@@ -283,10 +283,10 @@ class StreamingAgent:
 
                     # Send plugin tool execution completion event to main agent
                     await self.event_manager.emit_progress(
-                        f"Execute available tool: {tool_name}{suffix}",
+                        EventTitleType.EXECUTE_PLUGIN_TOOL.format(tool_name=tool_name),
                         tool_result,
-                        "END",
-                        agent="Stream Agent"
+                        EventStatusType.END,
+                        EventAgentType.STREAM_AGENT
                     )
 
                     tool_messages.append(
@@ -299,9 +299,9 @@ class StreamingAgent:
                         self.event_manager.create_event(
                             EventType.ERROR,
                             {
-                                "title": f"Execute available tool: {tool_name}{suffix}",
-                                "message": str(err),
-                                "status": "ERROR"
+                                "title": EventTitleType.EXECUTE_PLUGIN_TOOL.format(tool_name=tool_name),
+                                "message": EventMessageType.TOOL_ERROR.format(err=str(err)),
+                                "status": EventStatusType.ERROR
                             }
                         )
                     )
@@ -369,10 +369,10 @@ class StreamingAgent:
             
         # Send sub-agent start working event
         await self.event_manager.emit_progress(
-            "Stream Agent",
-            "Starting tool execution...",
-            "START",
-            agent="Stream Agent"
+            EventTitleType.STREAM_AGENT_START,
+            EventMessageType.STARTING_TOOL_EXECUTION,
+            EventStatusType.START,
+            EventAgentType.STREAM_AGENT
         )
         
         try:
@@ -388,10 +388,10 @@ class StreamingAgent:
                 # Send sub-agent work completion event
                 tool_count = len([msg for msg in messages if isinstance(msg, ToolMessage)])
                 await self.event_manager.emit_progress(
-                    "Stream Agent",
-                    f"Tool execution completed, executed {tool_count} tools",
-                    "END",
-                    agent="Stream Agent"
+                    EventTitleType.STREAM_AGENT_START,
+                    EventMessageType.TOOL_EXECUTION_COMPLETED.format(tool_count=tool_count),
+                    EventStatusType.END,
+                    EventAgentType.STREAM_AGENT
                 )
 
                 messages = [msg for msg in messages if isinstance(msg, ToolMessage) or (isinstance(msg, AIMessage) and msg.tool_calls)]
@@ -400,10 +400,10 @@ class StreamingAgent:
             else:
                 # Send no tool execution event
                 await self.event_manager.emit_progress(
-                    "Stream Agent",
-                    "No tools need to be executed",
-                    "END",
-                    agent="Stream Agent"
+                    EventTitleType.STREAM_AGENT_START,
+                    EventMessageType.NO_TOOLS_NEEDED,
+                    EventStatusType.END,
+                    EventAgentType.STREAM_AGENT
                 )
                 return []
                 
@@ -413,9 +413,9 @@ class StreamingAgent:
                 self.event_manager.create_event(
                     EventType.ERROR,
                     {
-                        "title": "Stream Agent",
-                        "message": f"Execution failed: {str(err)}",
-                        "status": "ERROR"
+                        "title": EventTitleType.STREAM_AGENT_START,
+                        "message": EventMessageType.EXECUTION_FAILED.format(err=str(err)),
+                        "status": EventStatusType.ERROR
                     }
                 )
             )

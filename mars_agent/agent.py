@@ -6,7 +6,7 @@ from collections.abc import Awaitable
 from uuid import uuid4
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage
 
-from mars_agent.schema import MarsModelConfig
+from mars_agent.schema import MarsModelConfig, EventStatusType, EventAgentType, EventMessageType, EventTitleType
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.agents.mcp_agent import MCPAgent
 from mars_agent.agents.stream_agent import StreamingAgent
@@ -35,7 +35,6 @@ class MarsAgent:
 
     Typical Usage
     -------------
-    The snippet below provides a minimal, runnable example – see ``test/example_agent.py`` for a full script.
 
     ```python
     import asyncio
@@ -114,6 +113,7 @@ class MarsAgent:
         self.stream_agent = None
         self.conversation_model = None
 
+        self.event_process_logs = []
         self.init_mars_agent()
 
 
@@ -228,6 +228,16 @@ class MarsAgent:
                 return []
         return []
 
+    def get_event_process_logs(self):
+        """Run logs from start to finish according to Agent type"""
+        event_process_logs = {}
+        for event in self.event_process_logs:
+            data = event.get("data")
+            if event.get("type") == EventType.PROGRESS.value:
+                event_process_logs[data.get("agent")] = event_process_logs.get(data.get("agent"), [])
+                event_process_logs[data.get("agent")].append(data)
+        return event_process_logs
+
     async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
         """Main agent's non-streaming invocation - unify sub-agent results and model replies"""
         if not self._initialized:
@@ -300,6 +310,7 @@ class MarsAgent:
         async for event in self.event_manager.stream_with_heartbeat(all_tasks):
             # Only when runtime logs are enabled
             if self.enable_runtime_logs:
+                self.event_process_logs.append(event)
                 yield event
 
         # Wait for sub-agents to complete and collect results
@@ -318,10 +329,10 @@ class MarsAgent:
         try:
             # Send model reply start event
             await self.event_manager.emit_progress(
-                "Model Response",
-                "Generating response...",
-                "START",
-                agent="Mars Agent"
+                EventTitleType.MODEL_RESPONSE,
+                EventMessageType.GENERATING_RESPONSE,
+                EventStatusType.START,
+                EventAgentType.MARS_AGENT
             )
             
             async for chunk in self.conversation_model.astream(messages):
@@ -332,10 +343,10 @@ class MarsAgent:
 
             # Send model reply completion event
             await self.event_manager.emit_progress(
-                "Model Response",
-                "Response generation completed",
-                "END",
-                agent="Mars Agent"
+                EventTitleType.MODEL_RESPONSE,
+                EventMessageType.RESPONSE_COMPLETED,
+                EventStatusType.END,
+                EventAgentType.MARS_AGENT
             )
             
         # Main agent uniformly handles errors
@@ -346,9 +357,9 @@ class MarsAgent:
                 self.event_manager.create_event(
                     EventType.ERROR,
                     {
-                        "title": "Model Response Error",
-                        "message": str(err),
-                        "status": "ERROR"
+                        "title": EventTitleType.MODEL_RESPONSE_ERROR,
+                        "message": EventMessageType.TOOL_ERROR.format(err=str(err)),
+                        "status": EventStatusType.ERROR
                     }
                 )
             )
