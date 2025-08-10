@@ -1,8 +1,35 @@
+import time
 from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 from typing import List, Any, Dict, Optional, Literal
+
+class ProgressModel(BaseModel):
+    agent: str
+    title: str
+    messages: str
+    status: str
+
+class ResponseModel(BaseModel):
+    chunk: str
+    accumulated: str
+
+class MarsBaseChunk(BaseModel):
+    type: str
+    timestamp: float
+
+class MarsProgressChunk(MarsBaseChunk):
+    type: str = "process"
+    data: ProgressModel
+
+class MarsResponseChunk(MarsBaseChunk):
+    type: str = "response"
+    data: ResponseModel
+
+class MarsHeartbeatChunk(MarsBaseChunk):
+    type: str = "heartbeat"
+    data: Dict[str, Any]
 
 
 class PlanType:
