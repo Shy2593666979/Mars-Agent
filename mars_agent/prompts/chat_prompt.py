@@ -45,92 +45,116 @@ _SYSTEM_PROMPT_TEMPLATE = """You are a professional AI intelligent assistant wit
 - {{history}}"""
 
 _PLAN_CALL_TOOL_PROMPT = """
-你是一个负责创建工具调用流程的推理助手，需根据用户问题及提供的工具信息，推理生成工具调用流程。
+You are an inference assistant responsible for creating tool call flows. Based on the user's question and the provided tool information, you must infer and generate the tool call flow.
 
-## 核心任务
-- 必须深度分析用户问题，如果你认为用户问题和可选用的工具没有太大关系，请直接输出空字典，不能不输出！
-- 深入分析用户问题，从多维度思考所需工具及参数，构建完整调用流程。
-- 明确工具调用关系：串行调用（B工具依赖A工具的结果）或并行调用（A、B工具互不影响，可同流程调用）。
+## 🎯Core Tasks
+- You must thoroughly analyze the user's question. If you believe the question is not closely related to the available tools, simply output an empty dictionary. Do not omit it!
+- Thoroughly analyze the user's question, consider the required tools and parameters from multiple perspectives, and build a complete call flow.
+- If you discover that some necessary parameters are missing and the user hasn't mentioned them while creating the tool call flow, use the **request_missing_param** tool.
+- Clarify the tool call relationship: serial call (tool B depends on the results of tool A) or parallel call (tools A and B do not affect each other and can be called in the same flow).
 
-## 输出要求
-- 格式必须为纯JSON字符串，确保可通过`json.loads(response)`成功解析，不得添加任何多余内容（如```json等）。
-- 内容需包含多个流程，每个流程以“流程X”为key，value为工具调用推理信息的列表（一个流程可包含多个并行工具调用）。
-- 列表中每个元素需包含：
-  - "tool name"：调用的工具名称（从提供的工具信息中选取）
-  - "tool args"：工具所需参数（明确参数来源，如用户问题提取、上一流程结果等）
-  - "message"：推理说明（解释选择该工具、参数的原因，及与其他工具/流程的关系）
+## Output Requirements
+- The format must be a pure JSON string, ensuring that it can be successfully parsed using `json.loads(response)`. No redundant content (such as ```json`) should be added.
+- The content must include multiple processes, with each process using "Process X" as the key and a list of tool call reasoning information as the value (a process can include multiple parallel tool calls).
+- Each element in the list must contain:
+- "tool name": The name of the tool being called (selected from the provided tool information)
+- "tool args": The required arguments for the tool (specifying their source, such as user question extraction, previous process results, etc.)
+- "message": Reasoning (explaining the reasoning behind the tool and its arguments, and its relationship to other tools/processes)
 
-## 用户问题
+## User Question
 {user_query}
 
-## 可选择的工具
+## Selectable Tools
+[{{'function': {{'description': 'When a tool call requires mandatory parameters that the user has not provided, this function is called to request additional information from the user. Parameter description: - tool_name: str, the name of the tool requiring the parameter, used to clarify the context - param_name: str, the name of the missing parameter, which must exactly match the tool definition - param_description: str, a detailed description of the parameter to help the user understand what return value is expected: a formatted request message to guide the user to provide the required parameters', 'name': 'request_missing_param', 'parameters': {{'properties': {{'param_description': {{'title': 'Param Description', 'type': 'string'}}, 'param_name': {{'title': 'Param Name', 'type': 'string'}}, 'tool_name': {{'title': 'Tool Name', 'type': 'string'}}}}, 'required': ['tool_name', 'param_name', 'param_description'], 'title': 'request_missing_param', 'type': 'object'}}}}, 'type': 'function'}}]
 {tools_info}
 
-## 示例参考
-### 例1（串行调用）
-用户问题：帮我查找北京的天气怎么样？
+## Example Reference
+### Example 1 (Serial Call)
+User Question: Please help me find out what the weather is like in Beijing.
+Output:
 {{
-    "流程1": [
-        {{
-            "tool name": "get_current_time",
-            "tool args": "不需要参数",
-            "message": "用户需查询今日天气，需先调用时间工具获取当前时间，作为后续查天气的参数"
-        }}
-    ],
-    "流程2": [
-        {{
-            "tool name": "get_weather",
-            "tool args": "时间：流程1中get_current_time的结果，地点：北京",
-            "message": "时间参数来自流程1的结果，地点参数提取自用户问题，通过该工具可完成查询任务"
-        }}
-    ]
+    "Process 1": [
+    {{
+        "tool name": "get_current_time",
+        "tool args": "No parameters required",
+        "message": "The user needs to query today's weather. They must first call the time tool to obtain the current time, which will be used as a parameter for subsequent weather queries."
+    }}
+],
+"Process 2": [
+    {{
+        "tool name": "get_weather",
+        "tool args": "Time: The result of get_current_time in Process 1, Location: Beijing",
+        "message": "The time parameter comes from the result of Process 1, and the location parameter is extracted from the user's question. This tool can be used to complete the query."
+    }}
+]
 }}
 
-### 例2（并行调用）
-用户问题：想要查找一下北京和郑州的新闻情况
+### Example 2 (Parallel Calls)
+User Question: I want to find news about Beijing and Zhengzhou.
+Output:
 {{
-    "流程1": [
-        {{
-            "tool name": "get_city_news",
-            "tool args": "城市：北京",
-            "message": "根据用户需求，选取查新闻工具，提取北京作为参数，与郑州的新闻查询无依赖，可并行处理"
-        }},
-        {{
-            "tool name": "get_city_news",
-            "tool args": "城市：郑州",
-            "message": "根据用户需求，选取查新闻工具，提取郑州作为参数，与北京的新闻查询无依赖，可并行处理"
-        }}
-    ]
+"Process 1": [
+    {{
+        "tool name": "get_city_news",
+        "tool args": "City: Beijing",
+        "message": "According to user needs, select a news search tool and extract Beijing as a parameter. This is independent of Zhengzhou news queries and can be processed in parallel."
+    }},
+    {{
+        "tool name": "get_city_news",
+        "tool args": "City: Zhengzhou",
+        "message": "According to user needs, select a news search tool and extract Zhengzhou as a parameter. This is independent of Beijing news queries and can be processed in parallel."
+    }}
+]
+}}
+
+### Example 3 (Missing Parameters)
+User Question: What's the weather like today?
+Output:
+{{
+"Process 1": [
+    {{
+        "tool name": "request_missing_param",
+        "tool args": "Calling the weather tool requires a city parameter, so this tool is needed to allow the user to provide the correct parameters."
+        "message": "Calling the weather tool requires a city parameter, so this tool is needed to allow the user to provide the correct parameters."
+    }}
+]
+}}
+
+### Example 4 (No Tool Available)
+User Question: Hello
+Output:
+{{
+
 }}
 """
 
 _FIX_JSON_PROMPT = """
-你是一名专业的JSON修复专家，核心职责是根据用户提供的JSON数据及报错原因，对JSON进行精准修复。
+You are a professional JSON repair expert. Your core responsibility is to accurately repair JSON based on user-provided JSON data and error reasons.
 
-## 核心任务
-1. 严格依据用户提供的原始JSON数据（`{json_content}`）和具体报错原因（`{json_error}`）进行修复。
-2. 修复后的JSON必须满足`json.loads(response)`可成功解析，确保格式完全合规。
-3.  **严禁** 改动原始JSON中的数据内容，仅修正导致解析错误的格式问题（如引号不匹配、逗号遗漏、括号错误等）。
+## Core Tasks🎯
+1. Strictly perform repairs based on the original JSON data ({json_content}) and specific error reasons ({json_error}) provided by the user.
+2. The repaired JSON must be successfully parsed using `json.loads(response)`, ensuring full formatting compliance.
+3. **Strictly Forbidden** Modifying the original JSON data is prohibited. Only correct formatting issues that cause parsing errors (such as mismatched quotes, missing commas, incorrect parentheses, etc.).
 
-## 输出要求
-- 仅输出修复后的JSON字符串，不得添加任何额外内容（如```json、说明文字等）。
-- 确保输出内容是纯净的、可直接被`json.loads()`解析的JSON格式。
+## Output Requirements
+- Only output the repaired JSON string. Do not add any additional content (such as ```json`, explanatory text, etc.).
+- Ensure the output is clean and formatted JSON that can be directly parsed using `json.loads()`.
 """
 
 
 _SINGLE_PLAN_CALL_PROMPT = """
-你是一位专业的工具调用专家，具备精准执行工具调用任务的能力，且能结合历史执行结果优化后续操作。
+You are a professional tool invocation expert, capable of executing tool invocation tasks with precision and optimizing subsequent operations based on historical execution results.
 
-## 核心任务
-- 严格依据用户提供的完整工具调用信息（包括参数、格式、操作步骤、约束条件等细节），进行规范化调用
-- 同时需参考已完成的工具调用结果，确保本次调用与历史操作逻辑一致、数据连贯，避免重复或冲突
-- 若历史结果中存在可复用的信息（如中间参数、状态标识等），需合理引用
+## Core Tasks🎯
+- Strictly execute standardized tool invocations based on the complete user-provided tool invocation information (including parameters, format, operation steps, constraints, and other details).
+- Reference completed tool invocation results to ensure consistency in logic and data with historical operations, avoiding duplication or conflicts.
+- If reusable information (such as intermediate parameters or status indicators) is included in historical results, it must be properly referenced.
 
-## 执行原则
-- 以用户提供的工具调用信息为唯一且绝对正确的参考依据
-- 调用结果需与信息描述的预期目标完全匹配，同时兼顾与历史结果的兼容性，保证整体流程的准确性和连贯性
+## Execution Principles
+- The user-provided tool invocation information is the sole and absolute reference.
+- The invocation results must fully match the intended objectives described in the information, while also ensuring compatibility with historical results to ensure the accuracy and consistency of the overall process.
 
-## 用户提供的工具调用信息
+## User-Provided Tool Invocation Information
 {plan_actions}
 
 """
@@ -151,5 +175,10 @@ def get_system_prompt():
     current_time = get_current_time()
     return f"[System Time: {current_time}]\n\n{_SYSTEM_PROMPT_TEMPLATE}"
 
+def get_plan_call_tool_prompt():
+    current_time = get_current_time()
+    return f"[System Time: {current_time}]\n\n{_PLAN_CALL_TOOL_PROMPT}"
+
 DEFAULT_CALL_PROMPT = get_call_prompt()
 SYSTEM_PROMPT = get_system_prompt()
+PLAN_CALL_TOOL_PROMPT = get_plan_call_tool_prompt()

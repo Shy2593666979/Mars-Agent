@@ -440,5 +440,5 @@ class StreamingAgent:
             if tool_name in tools:
                 for config in self.mcp_configs:
                     if server_name == config.server_name:
-                        return config.personal_config
+                        return config.personal_config or {}
         return {}

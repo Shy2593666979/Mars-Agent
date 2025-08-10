@@ -8,10 +8,12 @@ __version__ = "0.1.0"
 __author__ = "MingGuang Tian"
 
 from .agent import MarsAgent
+from .agents.plan_agent import MarsPlanAgent
 from .schema import MarsModelConfig, MCPBaseConfig, MCPSSEConfig, MCPStdioConfig
 
 __all__ = [
     "MarsAgent",
+    "MarsPlanAgent",
     "MarsModelConfig", 
     "MCPBaseConfig",
     "MCPSSEConfig",

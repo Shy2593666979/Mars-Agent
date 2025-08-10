@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import json
 from typing import List
+from datetime import datetime
 
 from langchain_core.messages import ToolMessage, BaseMessage, AIMessage, SystemMessage, ToolCall, HumanMessage
 
@@ -82,3 +83,8 @@ def fix_json_text(text: str):
     JSON strings cannot contain single quotes
     Fix JSON string"""
     return text.replace("'", '"')
+
+
+def get_current_time():
+    """Get formatted current timestamp"""
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')

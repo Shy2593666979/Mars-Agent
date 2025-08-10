@@ -5,6 +5,13 @@ from pydantic import BaseModel, Field
 from typing import List, Any, Dict, Optional, Literal
 
 
+class PlanType:
+    CALL_USER = "request_missing_param"
+
+    TOOL_NAME = "tool name"
+    TOOL_ARGS = "tool args"
+    MESSAGE = "message"
+
 class EventStatusType:
     """事件状态常量"""
     ERROR = "ERROR"
@@ -33,13 +40,24 @@ class EventTitleType:
     
     # 插件工具执行相关
     EXECUTE_PLUGIN_TOOL = "Execute Plugin Tool: {tool_name}"
-    
+
+    # 整合工具执行相关
+    EXECUTE_TOOL = "Execute Tool: {tool_name}"
+
+
     # Stream Agent 相关
     STREAM_AGENT_START = "Stream Agent"
     
     # 模型响应相关
     MODEL_RESPONSE = "Model Response"
     MODEL_RESPONSE_ERROR = "Model Response Error"
+
+    # Plan 相关
+    PLAN_ACTIONS = "Start Build Tools Plan"
+
+    # 修复Json
+    FIX_PLAN_JSON = "Fix Plan Json Data"
+
 
 
 class EventMessageType:
@@ -48,6 +66,8 @@ class EventMessageType:
     CALL_MCP_TOOL = "Calling MCP tool {tool_name}..."
     
     CALL_PLUGIN_TOOL = "Calling plugin tool {tool_name}..."
+
+    CALL_TOOL = "Calling tool {tool_name}..."
     
     # 可用工具消息
     AVAILABLE_MCP_TOOL = "Available MCP Tools Under {server_name}: {tool_name}"
@@ -74,11 +94,24 @@ class EventMessageType:
     
     ANALYZING_MCP_TOOLS = "Analyzing tools to use under {server_name}..."
     
+    START_TOOLS_PLAN = "Start Tools Plan"
+
+    END_TOOLS_PLAN = "Tools Plan: {content}"
+
+    START_FIX_JSON = "Start Fix Plan Json Data"
+
+    END_FIX_JSON = "Fix Plan Json: {fix_content}"
+
+
     # 错误消息
     TOOL_ERROR = "{err}"
     
     EXECUTION_FAILED = "Execution failed: {err}"
-    
+
+    FIX_JSON_ERROR = "Fix Json Failed: {err}"
+
+    TOOLS_PLAN_ERROR = "Tools Plan Failed: {err}"
+
     # 模型响应消息
     GENERATING_RESPONSE = "Generating response..."
     RESPONSE_COMPLETED = "Response generation completed"

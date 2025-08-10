@@ -43,6 +43,7 @@ class MCPManager:
                     }
                     tool_list.append(tool_dict)
                 result[mcp_config.server_name] = tool_list
+            return result
         except Exception as err:
             logger.info(f"Error getting MCP service tool list: {err}")
             return {}
