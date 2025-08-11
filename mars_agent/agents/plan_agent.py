@@ -2,14 +2,14 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable
-from typing import Callable, Union, List
+from typing import Callable, Union, List, AsyncGenerator, Dict
 
 from langchain_core.messages import SystemMessage, BaseMessage, HumanMessage, ToolMessage, AIMessage
 from langchain_core.tools import Tool
 
-from mars_agent.schema import MarsModelConfig, MCPBaseConfig
+from mars_agent.schema import MarsModelConfig, MCPBaseConfig, MarsBaseChunk, MarsAIMessage
 from mars_agent.core.mcp.manager import MCPManager
-from mars_agent.prompts.chat_prompt import _FIX_JSON_PROMPT, _SINGLE_PLAN_CALL_PROMPT, \
+from mars_agent.prompts.chat_prompt import FIX_JSON_PROMPT, SINGLE_PLAN_CALL_PROMPT, \
     PLAN_CALL_TOOL_PROMPT
 from mars_agent.schema import MarsModelConfig, EventStatusType, EventAgentType, EventMessageType, EventTitleType, \
     PlanType
@@ -20,11 +20,73 @@ from mars_agent.utils.util import get_current_time
 
 logger = logging.getLogger(__name__)
 
-CALL_USER = "request_missing_param"
-
 
 class MarsPlanAgent:
+    """
+    A planning-based conversational AI agent that can execute tools and functions through strategic planning.
 
+    The MarsPlanAgent is designed to analyze user queries, create execution plans, and orchestrate
+    tool calls to provide comprehensive responses. It supports both plugin functions and MCP (Model Context Protocol)
+    tools, with real-time event streaming and error handling capabilities.
+
+    Key Features:
+        - Strategic planning before tool execution
+        - Support for both sync and async functions
+        - MCP (Model Context Protocol) tool integration
+        - Real-time event streaming
+        - Automatic JSON repair for malformed responses
+        - Comprehensive error handling and logging
+
+    Attributes:
+        model_config (MarsModelConfig): Configuration for the main conversation model
+        tool_call_model_config (MarsModelConfig): Configuration for the tool calling model
+        functions (List[Callable]): List of plugin functions to be made available as tools
+        mcp_configs (List[MCPBaseConfig]): List of MCP server configurations
+        enable_runtime_logs (bool): Whether to enable runtime event logging
+        event_queue (asyncio.Queue): Optional queue for event management
+
+    Example:
+        Basic usage with plugin functions:
+
+        ```python
+        import asyncio
+        from mars_agent.schema import MarsModelConfig
+        from mars_agent.core.plan_agent import MarsPlanAgent
+
+        # Define some plugin functions
+        def get_weather(city: str) -> str:
+            '''Get current weather for a city'''
+            # Your weather API implementation
+            return f"Weather in {city}: 22°C, sunny"
+
+        async def search_web(query: str) -> str:
+            '''Search the web for information'''
+            # Your web search implementation
+            return f"Search results for: {query}"
+
+        # Configure the agent
+        model_config = MarsModelConfig(
+            model="gpt-4",
+            base_url="https://xxxxxxxxxx"
+            api_key="your-api-key"
+        )
+
+        agent = MarsPlanAgent(
+            model_config=model_config,
+            functions=[get_weather, search_web],
+            enable_runtime_logs=True
+        )
+
+        # Use the agent
+        response = await agent.ainvoke("What's the weather like in Tokyo?")
+        print(response.content)
+
+    Note:
+        - Plugin functions should include proper docstrings for tool descriptions
+        - MCP servers must be properly configured and accessible
+        - The agent automatically handles JSON parsing errors with repair attempts
+        - Event streaming is optional but recommended for real-time user feedback
+    """
     def __init__(self,
                  model_config: Union[dict, MarsModelConfig],
                  tool_call_model_config: Union[dict, MarsModelConfig] = None,
@@ -161,7 +223,7 @@ class MarsPlanAgent:
             )
 
             fix_message = HumanMessage(
-                content=_FIX_JSON_PROMPT.format(json_content=response.content, json_error=str(err)))
+                content=FIX_JSON_PROMPT.format(json_content=response.content, json_error=str(err)))
             fix_response = await self.conversation_model.ainvoke([fix_message])
 
             try:
@@ -206,7 +268,7 @@ class MarsPlanAgent:
 
             # Prepare different prompts for each call
             call_tool_messages = []
-            system_message = HumanMessage(content=_SINGLE_PLAN_CALL_PROMPT.format(plan_actions=str(plan)))
+            system_message = HumanMessage(content=SINGLE_PLAN_CALL_PROMPT.format(plan_actions=str(plan)))
             call_tool_messages.append(system_message)
             call_tool_messages.extend(tool_results)
 
@@ -336,7 +398,7 @@ class MarsPlanAgent:
                     return config.personal_config or {}
         return {}
 
-    async def astream(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
+    async def astream(self, messages: Union[str, BaseMessage, List[BaseMessage]]) -> AsyncGenerator[MarsBaseChunk, Dict]:
         if isinstance(messages, str):
             messages = [HumanMessage(content=messages)]
         elif isinstance(messages, BaseMessage):
@@ -404,7 +466,7 @@ class MarsPlanAgent:
                 response_content
             )
 
-    async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]) -> AIMessage:
+    async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]) -> MarsAIMessage:
         if isinstance(messages, str):
             messages = [HumanMessage(content=messages)]
         elif isinstance(messages, BaseMessage):
@@ -424,4 +486,4 @@ class MarsPlanAgent:
         messages.extend(tool_results)
 
         response = await self.conversation_model.ainvoke(messages)
-        return AIMessage(content=response.content)
+        return MarsAIMessage(content=response.content)

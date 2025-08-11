@@ -1,207 +1,364 @@
 # Mars Agent 架构设计
 
+> GitHub仓库：https://github.com/Shy2593666979/Mars-Agent
+
 ## 🎯 架构概述
 
-Mars Agent 采用主副代理架构模式，实现清晰的职责分离和集中化管理。
+Mars Agent 提供两种不同的Agent执行策略，满足不同的使用场景：
 
-### 📋 架构组件
+1. **MarsAgent**: 并发执行策略 - 将每个MCP服务器和插件集合当作独立Agent并发执行
+2. **MarsPlanAgent**: 规划执行策略 - 先制定执行计划，再按计划逐步调用工具
+
+### 📋 MarsAgent 架构 (并发执行)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    🏠 MarsAgent (主代理)                      │
+│                    🏠 MarsAgent (主控制器)                    │
 │  ┌─────────────────────────────────────────────────────────┐ │
-│  │ • 统一事件管理和流式响应                                   │ │
-│  │ • 最终模型调用和回复生成                                   │ │
-│  │ • 协调副代理工作                                         │ │
-│  │ • 错误处理和兜底策略                                      │ │
+│  │ • 并发调度多个Agent                                      │ │
+│  │ • 汇总所有Agent结果                                      │ │
+│  │ • 统一模型调用和回复                                      │ │
+│  │ • 流式事件管理                                          │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                           ⬆                                  │
-│                    📡 事件队列 (Event Queue)                   │
-│                    ⬆               ⬆                         │
-│  ┌─────────────────────┐     ┌─────────────────────┐          │
-│  │ 🔧 StreamingAgent   │     │ 🛠️ MCPAgent        │          │
-│  │ (副代理)            │     │ (副代理)           │          │
-│  │ • 插件工具执行       │     │ • MCP工具执行      │          │
-│  │ • 工具调用决策       │     │ • MCP服务器连接    │          │
-│  │ • 事件上报          │     │ • 事件上报         │          │
-│  └─────────────────────┘     └─────────────────────┘          │
+│                    📡 事件汇聚 (Event Aggregation)             │
+│    ⬆              ⬆              ⬆              ⬆            │
+│ ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
+│ │🔧 Plugin│  │🛠️ MCP-A │  │🛠️ MCP-B │  │🛠️ MCP-C │           │
+│ │ Agent   │  │ Agent   │  │ Agent   │  │ Agent   │           │
+│ │• 插件集合│  │• 地图服务│  │• 办公服务│  │• 其他...│           │
+│ │• 工具执行│  │• 工具执行│  │• 工具执行│  │• 工具执行│           │
+│ └─────────┘  └─────────┘  └─────────┘  └─────────┘           │
+│        并发执行 (Concurrent Execution)                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 🏗️ 组件职责
+### 📋 MarsPlanAgent 架构 (规划执行)
 
-### 🏠 MarsAgent (主代理)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  🧠 MarsPlanAgent (规划控制器)                 │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ Step 1: 🔍 收集所有可用工具                              │ │
+│  │ Step 2: 🤖 LLM制定执行计划                               │ │
+│  │ Step 3: ⚡ 按计划逐步执行                                │ │
+│  │ Step 4: 📊 汇总结果并回复                                │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│  📋 Planning Phase (计划阶段)                                │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ 🛠️ 所有MCP工具 + 🔧 插件工具 → 🤖 LLM → 📝 执行计划     │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                           ⬇                                  │
+│  ⚡ Execution Phase (执行阶段)                                │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ 📝 Plan Step 1 → 🔧 Tool Call → ✅ Result              │ │
+│  │ 📝 Plan Step 2 → 🔧 Tool Call → ✅ Result              │ │
+│  │ 📝 Plan Step N → 🔧 Tool Call → ✅ Result              │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                     Sequential Execution                     │
+└─────────────────────────────────────────────────────────────┘
+```
 
-**核心职责:**
-- **事件管理**: 统一接收和处理来自副代理的所有事件
-- **模型调用**: 负责最终的对话模型调用和响应生成
-- **流式处理**: 管理整个对话的流式事件流
-- **协调调度**: 并行调度副代理执行任务
-- **错误处理**: 统一的错误处理和兜底策略
+## 🏗️ 核心差异对比
 
-**主要方法:**
-- `astream()`: 流式对话接口，统一事件处理
-- `ainvoke()`: 非流式对话接口
-- `call_mcp_agent_messages()`: 调度MCP Agent
-- `call_stream_agent_messages()`: 调度Stream Agent
+| 特性 | MarsAgent (并发执行) | MarsPlanAgent (规划执行) |
+|------|---------------------|------------------------|
+| **执行策略** | 并发执行所有Agent | 先规划后按步骤执行 |
+| **Agent划分** | 每个MCP服务器 + 插件集合 | 统一工具池 |
+| **适用场景** | 独立任务、快速响应 | 复杂流程、依赖任务 |
+| **执行效率** | 高并发，速度快 | 有序执行，逻辑清晰 |
+| **工具协调** | 无协调，独立执行 | 智能协调，步骤优化 |
 
-### 🔧 StreamingAgent (副代理)
+## 🔄 执行流程对比
 
-**核心职责:**
-- **工具执行**: 负责插件函数和MCP工具的执行
-- **工具决策**: 分析用户需求，决定调用哪些工具
-- **事件上报**: 将工具执行过程事件发送给主代理
-- **结果返回**: 返回工具执行结果给主代理
-
-**主要特点:**
-- 不进行模型回复，只负责工具执行
-- 所有事件自动发送到主代理事件队列
-- 支持插件函数和MCP工具的混合执行
-
-### 🛠️ MCPAgent (副代理)
-
-**核心职责:**
-- **MCP连接**: 建立和管理MCP服务器连接
-- **MCP工具**: 执行特定MCP服务器的工具
-- **事件上报**: 将MCP工具执行过程事件发送给主代理
-- **结果返回**: 返回MCP工具执行结果给主代理
-
-**主要特点:**
-- 专门处理MCP协议相关的工具调用
-- 支持多个MCP服务器的并发处理
-- 独立的工具调用决策和执行
-
-## 🔄 工作流程
-
-### 流式对话流程
+### MarsAgent 执行流程
 
 ```mermaid
 sequenceDiagram
     participant User
     participant MarsAgent as 🏠 MarsAgent
-    participant StreamAgent as 🔧 StreamingAgent  
-    participant MCPAgent as 🛠️ MCPAgent
-    participant EventQueue as 📡 EventQueue
+    participant PluginAgent as 🔧 Plugin Agent
+    participant MCPAgent1 as 🛠️ MCP Agent A
+    participant MCPAgent2 as 🛠️ MCP Agent B
     participant Model as 🤖 LLM Model
 
     User->>MarsAgent: 发送消息
     
-    par 并行执行副代理
-        MarsAgent->>StreamAgent: 启动工具执行
-        StreamAgent->>EventQueue: 发送工具执行事件
-        StreamAgent-->>MarsAgent: 返回工具结果
+    par 并发执行所有Agent
+        MarsAgent->>PluginAgent: 执行插件工具
+        PluginAgent-->>MarsAgent: 返回结果A
     and
-        MarsAgent->>MCPAgent: 启动MCP工具执行
-        MCPAgent->>EventQueue: 发送MCP工具事件
-        MCPAgent-->>MarsAgent: 返回MCP工具结果
+        MarsAgent->>MCPAgent1: 执行MCP工具
+        MCPAgent1-->>MarsAgent: 返回结果B
+    and
+        MarsAgent->>MCPAgent2: 执行MCP工具  
+        MCPAgent2-->>MarsAgent: 返回结果C
     end
     
-    loop 事件流式处理
-        EventQueue->>User: 实时事件流
-    end
-    
-    MarsAgent->>MarsAgent: 合并副代理结果
-    MarsAgent->>Model: 调用对话模型
-    
-    loop 流式回复
-        Model->>MarsAgent: 响应块
-        MarsAgent->>User: 流式响应
-    end
+    MarsAgent->>MarsAgent: 汇总所有Agent结果
+    MarsAgent->>Model: 调用模型生成回复
+    Model-->>User: 返回最终回复
 ```
 
-### 事件流向
+### MarsPlanAgent 执行流程
 
-```
-副代理事件 → 主代理事件队列 → 用户接收
+```mermaid
+sequenceDiagram
+    participant User
+    participant PlanAgent as 🧠 MarsPlanAgent
+    participant ToolPool as 🛠️ 工具池
+    participant Model as 🤖 LLM Model
 
-StreamingAgent   ┐
-                 ├──→ EventQueue ──→ User
-MCPAgent         ┘
+    User->>PlanAgent: 发送消息
+    
+    PlanAgent->>ToolPool: 收集所有可用工具
+    ToolPool-->>PlanAgent: 返回工具列表
+    
+    PlanAgent->>Model: 制定执行计划
+    Model-->>PlanAgent: 返回执行计划
+    
+    loop 按计划逐步执行
+        PlanAgent->>ToolPool: 执行计划步骤N
+        ToolPool-->>PlanAgent: 返回步骤结果
+    end
+    
+    PlanAgent->>PlanAgent: 汇总所有步骤结果
+    PlanAgent->>Model: 调用模型生成回复
+    Model-->>User: 返回最终回复
 ```
 
 ## 🎨 设计优势
 
-### 1. **职责清晰**
-- **主代理**: 专注事件管理和模型调用
-- **副代理**: 专注工具执行和结果返回
-- **分工明确**: 避免功能重叠和混乱
+### MarsAgent 优势
+- **高并发**: 多Agent并发执行，响应速度快
+- **资源隔离**: 每个MCP服务独立Agent，故障隔离
+- **扩展性强**: 新增MCP服务即新增Agent
+- **适合独立任务**: 无依赖关系的工具调用
 
-### 2. **集中管理**
-- **统一事件**: 所有事件通过主代理统一处理
-- **统一回复**: 所有模型调用由主代理负责
-- **统一错误**: 集中的错误处理和兜底策略
+### MarsPlanAgent 优势
+- **智能规划**: LLM制定最优执行计划
+- **步骤协调**: 处理有依赖关系的复杂任务
+- **逻辑清晰**: 按计划有序执行，便于调试
+- **适合复杂流程**: 多步骤、有依赖的任务场景
 
-### 3. **高度并发**
-- **并行执行**: 副代理可以并行工作
-- **实时反馈**: 工具执行过程实时反馈给用户
-- **流式体验**: 完整的流式交互体验
+## 📦 安装
 
-### 4. **易于扩展**
-- **插件化**: 新的副代理可以轻松添加
-- **模块化**: 每个代理职责单一，便于维护
-- **标准化**: 统一的事件接口和通信协议
+```bash
+pip install git+https://github.com/Shy2593666979/Mars-Agent
+
+# 或者
+
+pip install mars-agent
+```
 
 ## 📝 使用示例
 
-### 基本使用
+### MarsAgent (并发执行) 示例
 
 ```python
-from mars_agent import MarsAgent, MarsModelConfig, MCPConfig
+import asyncio
+from datetime import datetime
 
-# 配置模型
-model_config = MarsModelConfig(
-    model="gpt-3.5-turbo",
-    api_key="your-api-key",
-    base_url="https://api.openai.com/v1"
-)
+from mars_agent import MarsAgent
+from mars_agent.schema import MarsModelConfig, MCPSSEConfig, MarsResponseChunk
 
-# 配置MCP服务器
-mcp_configs = [
-    MCPConfig(
-        url="http://localhost:8000",
-        type="http",
-        server_name="weather_server",
-        user_config={"api_key": "weather_key"}
-    )
-]
-
-# 定义插件函数
-def get_time():
+# 定义自定义函数
+def get_current_time():
     """获取当前时间"""
-    return "2024-12-19 10:30:00"
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-# 初始化主代理
-agent = MarsAgent(
-    model_config=model_config,
-    mcp_configs=mcp_configs,
-    functions=[get_time]
+def test_weather(location: str):
+    """查询指定地点的天气信息"""
+    return f"The weather in {location} is sunny, 25°C"
+
+async def main():
+    # 初始化MarsAgent
+    agent = MarsAgent(
+        # 工具调用模型配置（可选配置，若不指定tool call模型，默认工具调用和对话模型使用同一个）
+        tool_call_model_config=MarsModelConfig(
+            model="qwen-plus",
+            api_key="your-api-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ),
+        # 对话模型配置
+        model_config=MarsModelConfig(
+            model="qwen-plus", 
+            api_key="your-api-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ),
+        # 自定义函数（将作为一个Plugin Agent）
+        functions=[get_current_time, test_weather],
+        # MCP服务器配置（每个MCP服务器将作为一个独立Agent）
+        mcp_configs=[
+            MCPSSEConfig(
+                server_name="地图服务",
+                url="https://your-mcp-server.com/sse",
+            ),
+            MCPSSEConfig(
+                server_name="办公服务",
+                url="https://your-office-server.com/sse",
+                personal_config={
+                    "app_id": "your-app-id", 
+                    "app_secret": "your-app-secret"
+                }
+            )
+        ]
+    )
+
+    # 并发执行 - 所有Agent同时工作
+    print("=== 并发执行示例 ===")
+    async for chunk in agent.astream("你好，请问北京的天气怎么样？现在几点了？"):
+        if isinstance(chunk, MarsResponseChunk):
+            print(chunk.data.content, end="")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### MarsPlanAgent (规划执行) 示例
+
+```python
+from mars_agent import MarsPlanAgent
+from mars_agent.schema import MarsModelConfig, MCPSSEConfig, MarsProgressChunk
+
+async def plan_agent_example():
+    # 初始化MarsPlanAgent
+    plan_agent = MarsPlanAgent(
+        tool_call_model_config=MarsModelConfig(
+            model="qwen-plus",
+            api_key="your-api-key", 
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ),
+        model_config=MarsModelConfig(
+            model="qwen-plus",
+            api_key="your-api-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ),
+        mcp_configs=[
+            MCPSSEConfig(
+                server_name="地图服务",
+                url="https://your-mcp-server.com/sse"
+            ),
+            MCPSSEConfig(
+                server_name="网页抓取",
+                url="https://your-fetch-server.com/sse"
+            )
+        ]
+    )
+
+    # 规划执行 - 先制定计划，再逐步执行
+    print("=== 规划执行示例 ===")
+    async for chunk in plan_agent.astream("帮我查询北京到上海的路线，然后抓取相关的交通信息网页"):
+        if isinstance(chunk, MarsProgressChunk):
+            print(f"执行进度: {chunk}")
+        elif isinstance(chunk, MarsResponseChunk):
+            print(chunk.data.accumulated)
+```
+
+### MCP配置选项
+
+```python
+from mars_agent.schema import MCPSSEConfig, MCPStdioConfig
+
+# SSE方式连接MCP服务器
+sse_config = MCPSSEConfig(
+    server_name="服务器名称",
+    url="https://your-server.com/sse",
+    personal_config={
+        "api_key": "your-api-key",
+        "other_param": "value"
+    }
 )
 
-await agent.init_mars_agent()
-
-# 流式对话
-async for event in agent.astream("帮我查看天气和时间"):
-    print(f"事件: {event}")
+# Stdio方式连接MCP服务器
+stdio_config = MCPStdioConfig(
+    server_name="本地服务",
+    command="python",
+    args=["-m", "your_mcp_server"],
+    env={"API_KEY": "your-api-key"}
+)
 ```
+
+### 响应类型处理
+
+```python
+from mars_agent import MarsResponseChunk
+from mars_agent.schema import MarsProgressChunk
+
+async for chunk in agent.astream("你的问题"):
+    # 进度事件 (MarsPlanAgent特有)
+    if isinstance(chunk, MarsProgressChunk):
+        print(f"执行进度: {chunk.message}")
+    
+    # 响应内容
+    elif isinstance(chunk, MarsResponseChunk):
+        print(f"回复: {chunk.data.content}")
+    
+    # 其他事件类型
+    else:
+        print(f"事件: {chunk}")
+```
+
+### 选择使用建议
+
+#### 使用 MarsAgent 的场景
+- 需要快速并发执行多个独立工具
+- 工具之间无依赖关系
+- 追求响应速度
+- 简单的多工具调用场景
+
+#### 使用 MarsPlanAgent 的场景
+- 需要处理复杂的多步骤任务
+- 工具调用之间有依赖关系
+- 需要智能规划执行顺序
+- 追求执行逻辑的清晰性
 
 ### 事件类型
 
-主代理会产生以下类型的事件：
+主Agent会产生以下类型的事件：
 
-- **`heartbeat`**: 心跳事件，保持连接活跃
-- **`progress`**: 进度事件，显示各个阶段的执行状态
-- **`response_chunk`**: 响应块事件，流式模型回复
+- **`MarsProgressChunk`**: 进度事件，显示各个阶段的执行状态（MarsPlanAgent特有）
+- **`MarsResponseChunk`**: 响应块事件，流式模型回复内容
+- **`heartbeat`**: 心跳事件，保持连接活跃  
 - **`error`**: 错误事件，工具执行或模型调用错误
 
-## 🔮 未来扩展
+### 配置选项
 
-该架构支持以下扩展：
+#### 模型配置
 
-1. **新的副代理类型**: 可以轻松添加新的专门化副代理
-2. **事件类型扩展**: 支持更多类型的事件和数据
-3. **多模型支持**: 主代理可以支持多种不同的模型
-4. **分布式部署**: 副代理可以部署在不同的服务器上
+```python
+from mars_agent.schema import MarsModelConfig
+
+# 基本配置
+model_config = MarsModelConfig(
+    model="qwen-plus",
+    api_key="your-api-key",
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+)
+
+# 高级配置
+advanced_config = MarsModelConfig(
+    model="gpt-4",
+    api_key="your-openai-key", 
+    base_url="https://api.openai.com/v1",
+    temperature=0.7
+)
+```
+
+#### 主Agent高级配置
+
+```python
+agent = MarsAgent(
+    model_config=model_config,
+    tool_call_model_config=tool_call_config,  # 可使用不同的模型进行工具调用
+    functions=[your_functions],
+    mcp_configs=[mcp_configs],
+    mcp_as_agent=False,  # 是否将MCP作为Agent单独使用，这里默认为True
+)
+```
 
 ---
 
-**设计理念**: 通过清晰的职责分离和统一的事件管理，构建一个高效、可扩展、易维护的AI代理系统。 
+**设计理念**: 通过并发执行和规划执行两种策略，为不同复杂度的任务提供最优的解决方案。
+

@@ -7,7 +7,7 @@ from datetime import datetime
 from langchain_core.messages import ToolMessage, BaseMessage, AIMessage, SystemMessage, ToolCall, HumanMessage
 
 from openai.types.chat import ChatCompletionMessageToolCall
-from openai.types.chat.chat_completion_message_tool_call import Function
+# from openai.types.chat.chat_completion_message_tool_call import Function
 from pydantic import create_model
 
 
@@ -55,16 +55,16 @@ def convert_langchain_tool_calls(tool_calls: List[ChatCompletionMessageToolCall]
 
 
 # Converts Langchain format to OpenAI format for adaptation
-def convert_openai_tool_calls(self, tool_calls: List[ToolCall]):
-    openai_tool_calls: List[ChatCompletionMessageToolCall] = []
-
-    for tool_call in tool_calls:
-        openai_tool_calls.append(ChatCompletionMessageToolCall(id=tool_call["id"], type="function",
-                                                               function=Function(
-                                                                   arguments=json.dumps(tool_call["args"]),
-                                                                   name=tool_call["name"])))
-
-    return openai_tool_calls
+# def convert_openai_tool_calls(self, tool_calls: List[ToolCall]):
+#     openai_tool_calls: List[ChatCompletionMessageToolCall] = []
+#
+#     for tool_call in tool_calls:
+#         openai_tool_calls.append(ChatCompletionMessageToolCall(id=tool_call["id"], type="function",
+#                                                                function=Function(
+#                                                                    arguments=json.dumps(tool_call["args"]),
+#                                                                    name=tool_call["name"])))
+#
+#     return openai_tool_calls
 
 
 def mcp_tool_to_args_schema(name, description, args_schema) -> dict:

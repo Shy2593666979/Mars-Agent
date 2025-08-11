@@ -16,6 +16,9 @@ from typing import Dict, Any, Optional, AsyncGenerator, Union
 from dataclasses import dataclass
 from pydantic import BaseModel
 
+from mars_agent.schema import ProgressModel, ResponseModel, MarsResponseChunk, MarsProgressChunk, MarsBaseChunk, \
+    MarsHeartbeatChunk
+
 
 class EventType(str, Enum):
     """
@@ -77,7 +80,7 @@ class EventManager:
         self.event_queue = event_queue or asyncio.Queue()
     
     @staticmethod
-    def create_heartbeat_event(message: str = "Connection maintained...") -> Dict[str, Any]:
+    def create_heartbeat_event(message: str = "Connection maintained...") -> Any:
         """
         Create heartbeat event
         
@@ -87,41 +90,41 @@ class EventManager:
         Returns:
             Dict[str, Any]: Heartbeat event dictionary
         """
-        return {
-            "type": EventType.HEARTBEAT.value,
-            "timestamp": time.time(),
-            "data": {"message": message}
-        }
+
+        return MarsHeartbeatChunk(
+            type=EventType.HEARTBEAT.value,
+            timestamp=time.time(),
+            data={"message": message}
+        )
     
     @staticmethod
     def create_response_chunk_event(
-        chunk: str, 
+        content: str,
         accumulated: str, 
         additional_data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    ) -> MarsBaseChunk:
         """
         Create response chunk event
         
         Args:
-            chunk (str): Current response chunk content
+            content (str): Current response chunk content
             accumulated (str): Accumulated response content
             additional_data (Optional[Dict[str, Any]]): Additional data
             
         Returns:
-            Dict[str, Any]: Response chunk event dictionary
+            Response chunk event dictionary
         """
-        data = {
-            "chunk": chunk,
-            "accumulated": accumulated
-        }
+        data = ResponseModel(
+            content=content,
+            accumulated=accumulated
+        )
         if additional_data:
-            data.update(additional_data)
+            data.additional_data = additional_data
             
-        return {
-            "type": EventType.RESPONSE_CHUNK.value,
-            "timestamp": time.time(),
-            "data": data
-        }
+        return MarsResponseChunk(
+            timestamp=time.time(),
+            data=data
+        )
     
     @staticmethod
     def create_event(
@@ -138,7 +141,7 @@ class EventManager:
             timestamp (Optional[float]): Timestamp, use current time if not provided
             
         Returns:
-            Dict[str, Any]: Event dictionary
+            Event dictionary
         """
         if isinstance(event_type, EventType):
             event_type = event_type.value
@@ -156,7 +159,7 @@ class EventManager:
         status: str, 
         progress: Optional[int] = None,
         agent: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> MarsProgressChunk:
         """
         Create progress event
         
@@ -168,26 +171,21 @@ class EventManager:
             agent (Optional[str]): Agent name, indicates message source
             
         Returns:
-            Dict[str, Any]: Progress event dictionary
+            Progress event dictionary
         """
-        data = {
-            "agent": agent,
-            "title": title,
-            "message": message,
-            "status": status
-        }
-        if progress is not None:
-            data["progress"] = progress
-        # if agent is not None:
-        #     data["agent"] = agent
+        data = ProgressModel(
+            title=title,
+            message=message,
+            status=status,
+            agent=agent
+        )
             
-        return {
-            "type": EventType.PROGRESS.value,
-            "timestamp": time.time(),
-            "data": data
-        }
+        return MarsProgressChunk(
+            timestamp=time.time(),
+            data=data
+        )
     
-    async def emit_event(self, event_data: Dict[str, Any]) -> None:
+    async def emit_event(self, event_data: Union[Dict[str, Any], Any]) -> None:
         """
         Send event to queue
         
@@ -208,7 +206,7 @@ class EventManager:
     
     async def emit_response_chunk(
         self, 
-        chunk: str, 
+        content: str,
         accumulated: str, 
         additional_data: Optional[Dict[str, Any]] = None
     ) -> None:
@@ -216,11 +214,11 @@ class EventManager:
         Send response chunk event
         
         Args:
-            chunk (str): Current response chunk content
+            content (str): Current response chunk content
             accumulated (str): Accumulated response content
             additional_data (Optional[Dict[str, Any]]): Additional data
         """
-        event = self.create_response_chunk_event(chunk, accumulated, additional_data)
+        event = self.create_response_chunk_event(content, accumulated, additional_data)
         await self.emit_event(event)
     
     async def emit_progress(
@@ -247,9 +245,9 @@ class EventManager:
     async def stream_with_heartbeat(
         self, 
         tasks: list, 
-        heartbeat_interval: float = 10.0,
+        heartbeat_interval: float = 5.0,
         heartbeat_message: str = "Connection maintained..."
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[Any, None]:
         """
         Streaming processor with heartbeat
         

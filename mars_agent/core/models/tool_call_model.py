@@ -5,7 +5,6 @@ from langchain_core.messages import BaseMessage, ChatMessage, HumanMessage, AIMe
     SystemMessage, ToolCall
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
-from openai.types.chat.chat_completion_message_tool_call import Function
 
 from mars_agent.core.models.base_model import BaseMarsModel
 

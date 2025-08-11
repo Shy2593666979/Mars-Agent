@@ -128,7 +128,7 @@ Output:
 }}
 """
 
-_FIX_JSON_PROMPT = """
+FIX_JSON_PROMPT = """
 You are a professional JSON repair expert. Your core responsibility is to accurately repair JSON based on user-provided JSON data and error reasons.
 
 ## Core Tasks🎯
@@ -142,7 +142,7 @@ You are a professional JSON repair expert. Your core responsibility is to accura
 """
 
 
-_SINGLE_PLAN_CALL_PROMPT = """
+SINGLE_PLAN_CALL_PROMPT = """
 You are a professional tool invocation expert, capable of executing tool invocation tasks with precision and optimizing subsequent operations based on historical execution results.
 
 ## Core Tasks🎯

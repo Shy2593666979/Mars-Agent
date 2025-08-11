@@ -1,4 +1,4 @@
-from typing import List
+import openai
 from openai import AsyncOpenAI, OpenAI
 import json
 from typing import List, Dict, Any, Union
@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Union
 from langchain_core.messages import BaseMessage, ChatMessage, HumanMessage, AIMessage, FunctionMessage, ToolMessage, \
     SystemMessage, ToolCall
 from openai.types.chat import ChatCompletionMessageToolCall
-from openai.types.chat.chat_completion_message_tool_call import Function
+
 from pydantic import BaseModel, Field
 
 
@@ -56,13 +56,26 @@ class BaseMarsModel:
 
     # Convert Langchain format to OpenAI format adaptation
     def convert_openai_tool_calls(self, tool_calls: List[ToolCall]):
-        openai_tool_calls: List[ChatCompletionMessageToolCall] = []
+        openai_tool_calls: List[Any] = []
+        openai_version = openai.version.VERSION
+        if openai_version >= "1.99.5":
+            from openai.types.chat import ChatCompletionMessageFunctionToolCall
+            from openai.types.chat.chat_completion_message_function_tool_call import Function
 
-        for tool_call in tool_calls:
-            openai_tool_calls.append(ChatCompletionMessageToolCall(id=tool_call["id"], type="function",
-                                                                   function=Function(
-                                                                       arguments=json.dumps(tool_call["args"]),
-                                                                       name=tool_call["name"])))
+            for tool_call in tool_calls:
+                openai_tool_calls.append(ChatCompletionMessageFunctionToolCall(id=tool_call["id"], type="function",
+                                                                       function=Function(
+                                                                           arguments=json.dumps(tool_call["args"]),
+                                                                           name=tool_call["name"])))
+
+        else:
+            from openai.types.chat.chat_completion_message_tool_call import Function
+
+            for tool_call in tool_calls:
+                openai_tool_calls.append(ChatCompletionMessageToolCall(id=tool_call["id"], type="function",
+                                                                       function=Function(
+                                                                           arguments=json.dumps(tool_call["args"]),
+                                                                           name=tool_call["name"])))
 
         return openai_tool_calls
 

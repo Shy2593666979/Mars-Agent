@@ -29,7 +29,6 @@ from mars_agent.core.mcp.sessions import (
 from mars_agent.core.mcp.load_mcp.tools import load_mcp_tools
 
 ASYNC_CONTEXT_MANAGER_ERROR = (
-    "As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient cannot be used as a "
     "context manager (e.g., async with MultiServerMCPClient(...)). "
     "Instead, you can do one of the following:\n"
     "1. client = MultiServerMCPClient(...)\n"

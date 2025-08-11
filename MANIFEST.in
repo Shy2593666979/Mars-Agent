@@ -20,4 +20,5 @@ global-exclude .DS_Store
 global-exclude .git*
 global-exclude *.egg-info
 global-exclude build
-global-exclude dist 
+global-exclude dist
+global-exclude test

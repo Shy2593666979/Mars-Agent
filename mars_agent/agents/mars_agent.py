@@ -6,7 +6,8 @@ from collections.abc import Awaitable
 from uuid import uuid4
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage
 
-from mars_agent.schema import MarsModelConfig, EventStatusType, EventAgentType, EventMessageType, EventTitleType
+from mars_agent.schema import MarsModelConfig, EventStatusType, EventAgentType, EventMessageType, EventTitleType, \
+    MarsAIMessage
 from mars_agent.core.models.manager import MarsModelManager
 from mars_agent.agents.mcp_agent import MCPAgent
 from mars_agent.agents.stream_agent import StreamingAgent
@@ -232,13 +233,13 @@ class MarsAgent:
         """Run logs from start to finish according to Agent type"""
         event_process_logs = {}
         for event in self.event_process_logs:
-            data = event.get("data")
-            if event.get("type") == EventType.PROGRESS.value:
-                event_process_logs[data.get("agent")] = event_process_logs.get(data.get("agent"), [])
-                event_process_logs[data.get("agent")].append(data)
+            data = event.data
+            if event.type == EventType.PROGRESS.value:
+                event_process_logs[data.agent] = event_process_logs.get(data.agent, [])
+                event_process_logs[data.agent].append(data)
         return event_process_logs
 
-    async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]):
+    async def ainvoke(self, messages: Union[str, BaseMessage, List[BaseMessage]]) -> MarsAIMessage:
         """Main agent's non-streaming invocation - unify sub-agent results and model replies"""
         if not self._initialized:
             self.init_mars_agent()
@@ -278,7 +279,7 @@ class MarsAgent:
         # Main agent is responsible for final model invocation
         try:
             response = await self.conversation_model.ainvoke(messages)
-            return response.content
+            return MarsAIMessage(content=response.content)
         except Exception as err:
             logger.error(f"Main agent model invocation failed: {err}")
             raise

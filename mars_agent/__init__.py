@@ -7,16 +7,21 @@ This is a Python-based AI agent system designed with master-sub-agent architectu
 __version__ = "0.1.0"
 __author__ = "MingGuang Tian"
 
-from .agent import MarsAgent
+from .agents.mars_agent import MarsAgent
 from .agents.plan_agent import MarsPlanAgent
-from .schema import MarsModelConfig, MCPBaseConfig, MCPSSEConfig, MCPStdioConfig
+from .schema import MarsModelConfig, MCPBaseConfig, MCPSSEConfig, MCPStdioConfig, MCPStreamableHttpConfig, \
+    MarsAIMessage, MarsProgressChunk, MarsResponseChunk, MarsHeartbeatChunk
 
 __all__ = [
     "MarsAgent",
     "MarsPlanAgent",
-    "MarsModelConfig", 
+    "MarsModelConfig",
     "MCPBaseConfig",
     "MCPSSEConfig",
-    "MCPStdioConfig"
+    "MCPStdioConfig",
+    "MCPStreamableHttpConfig",
+    "MarsAIMessage",
+    "MarsProgressChunk",
+    "MarsResponseChunk",
+    "MarsHeartbeatChunk"
 ]
-

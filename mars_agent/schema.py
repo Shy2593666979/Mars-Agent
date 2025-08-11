@@ -3,17 +3,19 @@ from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-from typing import List, Any, Dict, Optional, Literal
+from typing import List, Any, Dict, Optional, Literal, Union
+
 
 class ProgressModel(BaseModel):
     agent: str
     title: str
-    messages: str
+    message: str
     status: str
 
 class ResponseModel(BaseModel):
-    chunk: str
+    content: str
     accumulated: str
+    additional_data: Optional[Dict[str, Any]] = None
 
 class MarsBaseChunk(BaseModel):
     type: str
@@ -30,6 +32,55 @@ class MarsResponseChunk(MarsBaseChunk):
 class MarsHeartbeatChunk(MarsBaseChunk):
     type: str = "heartbeat"
     data: Dict[str, Any]
+
+class MarsAIMessage(BaseModel):
+    type: str = "assistant"
+    content: Union[str, list[Union[str, dict]]]
+    metadata: Union[str, Dict] = None
+
+class MCPBaseConfig(BaseModel):
+    server_name: str
+    transport: str
+    personal_config: Optional[Dict[str, Any]] = None
+
+class MCPSSEConfig(MCPBaseConfig):
+    transport: Literal["sse"] = "sse"
+    url: str
+    headers: Optional[Dict[str, Any]] = None
+    timeout: Optional[float] = None
+    sse_read_timeout: Optional[float] = None
+    session_kwargs: Optional[Dict[str, Any]] = None
+
+class MCPStdioConfig(MCPBaseConfig):
+    transport: Literal["stdio"] = "stdio"
+    command: str
+    args: list[str]
+    env: Optional[Dict[str, str]] = None
+    cwd: Optional[Path] = None
+    encoding: str = "utf-8"
+    encoding_error_handler: Optional[str] = "ignore"
+    session_kwargs: Optional[Dict[str, Any]] = None
+
+class MCPStreamableHttpConfig(MCPBaseConfig):
+    transport: Literal["streamable_http"] = "streamable_http"
+    url: str
+    headers: Optional[Dict[str, Any]] = None
+    timeout: Optional[float] = None
+    sse_read_timeout: Optional[float] = None
+    terminate_on_close: Optional[bool] = None
+    session_kwargs: Optional[Dict[str, Any]] = None
+
+
+class MCPWebsocketConfig(MCPBaseConfig):
+    transport: Literal["websocket"] = "websocket"
+    url: str
+    session_kwargs: Optional[Dict[str, Any]] = None
+
+class MarsModelConfig(BaseModel):
+    model: str = Field(..., description="Name of the model")
+    base_url: str = Field(..., description="Base URL for the model API")
+    api_key: str = Field(..., description="API key for the model")
+    temperature: float = Field(default=0.6, description="Temperature value for the model")
 
 
 class PlanType:
@@ -144,48 +195,3 @@ class EventMessageType:
     RESPONSE_COMPLETED = "Response generation completed"
 
 
-class MCPBaseConfig(BaseModel):
-    server_name: str
-    transport: str
-
-class MCPSSEConfig(MCPBaseConfig):
-    transport: Literal["sse"] = "sse"
-    url: str
-    personal_config: Optional[Dict[str, Any]] = None
-    headers: Optional[Dict[str, Any]] = None
-    timeout: Optional[float] = None
-    sse_read_timeout: Optional[float] = None
-    session_kwargs: Optional[Dict[str, Any]] = None
-
-class MCPStdioConfig(MCPBaseConfig):
-    transport: Literal["stdio"] = "stdio"
-    command: str
-    args: list[str]
-    env: Optional[Dict[str, str]] = None
-    cwd: Optional[Path] = None
-    encoding: str = "utf-8"
-    encoding_error_handler: Optional[str] = None
-    session_kwargs: Optional[Dict[str, Any]] = None
-
-class MCPStreamableHttpConfig(MCPBaseConfig):
-    transport: Literal["streamable_http"] = "streamable_http"
-    url: str
-    personal_config: Optional[Dict[str, Any]] = None
-    headers: Optional[Dict[str, Any]] = None
-    timeout: Optional[float] = None
-    sse_read_timeout: Optional[float] = None
-    terminate_on_close: Optional[bool] = None
-    session_kwargs: Optional[Dict[str, Any]] = None
-
-
-class MCPWebsocketConfig(MCPBaseConfig):
-    transport: Literal["websocket"] = "websocket"
-    url: str
-    personal_config: Optional[Dict[str, Any]] = None
-    session_kwargs: Optional[Dict[str, Any]] = None
-
-class MarsModelConfig(BaseModel):
-    model: str = Field(..., description="Name of the model")
-    base_url: str = Field(..., description="Base URL for the model API")
-    api_key: str = Field(..., description="API key for the model")
-    temperature: float = Field(default=0.6, description="Temperature value for the model")
