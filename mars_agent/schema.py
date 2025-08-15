@@ -82,6 +82,12 @@ class MarsModelConfig(BaseModel):
     api_key: str = Field(..., description="API key for the model")
     temperature: float = Field(default=0.6, description="Temperature value for the model")
 
+class ModelConfig(BaseModel):
+    model: str = Field(..., description="Name of the model")
+    base_url: str = Field(..., description="Base URL for the model API")
+    api_key: str = Field(..., description="API key for the model")
+    temperature: float = Field(default=0.6, description="Temperature value for the model")
+
 
 class PlanType:
     CALL_USER = "request_missing_param"

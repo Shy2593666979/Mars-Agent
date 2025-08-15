@@ -6,13 +6,13 @@ tools, handle tool execution, and manage tool conversion between the two formats
 
 from typing import Any, cast, get_args
 
-from langchain_core.tools import (
+from mars_agent.core.tools import (
     BaseTool,
     InjectedToolArg,
     StructuredTool,
     ToolException,
 )
-from langchain_core.tools.base import get_all_basemodel_annotations
+from mars_agent.core.tools import get_all_basemodel_annotations
 from mcp import ClientSession
 from mcp.server.fastmcp.tools import Tool as FastMCPTool
 from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase, FuncMetadata

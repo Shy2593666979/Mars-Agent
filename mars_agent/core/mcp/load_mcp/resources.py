@@ -6,7 +6,7 @@ objects, handling both text and binary resource content types.
 
 import base64
 
-from langchain_core.documents.base import Blob
+from mars_agent.core.documents import Blob
 from mcp import ClientSession
 from mcp.types import BlobResourceContents, ResourceContents, TextResourceContents
 

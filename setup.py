@@ -19,7 +19,7 @@ def read_requirements():
     """读取依赖列表"""
     # 直接使用硬编码的依赖列表，避免编码问题
     requirements = [
-        "mcp>=1.6.0",
+        "mcp>=1.10.0",
         "openai>=1.12.0", 
         "langgraph>=0.3.0",
     ]
@@ -28,7 +28,7 @@ def read_requirements():
 
 setup(
     name="mars-agent",
-    version="0.1.0",
+    version="0.2.0",
     author="MingGuang Tian",
     author_email="2593666979@qq.com",
     description="Mars Agent - AI agent system based on master-sub-agent architecture, supporting MCP protocol and streaming processing",
